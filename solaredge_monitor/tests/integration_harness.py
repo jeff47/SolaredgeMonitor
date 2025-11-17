@@ -102,9 +102,7 @@ class IntegrationTestHarness:
         snapshots = reader.read_all()
 
         health = self.evaluator.evaluate(snapshots)
-
-        alert_inputs = [snap for snap in snapshots.values() if snap is not None]
-        alerts = evaluate_alerts(alert_inputs, now)
+        alerts = evaluate_alerts(health, now)
 
         return IntegrationResult(
             scenario=scenario,

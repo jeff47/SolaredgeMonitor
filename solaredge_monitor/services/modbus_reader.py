@@ -1,25 +1,11 @@
 # solaredge_monitor/services/modbus_reader.py
 
 from __future__ import annotations
-from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, Optional, Any
 
 from solaredge_monitor.vendor.solaredge_modbus import Inverter as ModbusInverter
-
-
-# ============================================================================
-# Data Model
-# ============================================================================
-
-@dataclass
-class InverterReading:
-    serial: str
-    model: str
-    status: Optional[int]
-    pac_w: Optional[float]
-    vdc: Optional[float]
-    idc: Optional[float]
-    total_wh: Optional[float]
+from solaredge_monitor.models.inverter import InverterSnapshot
 
 
 # ============================================================================
@@ -74,7 +60,7 @@ class ModbusReader:
 
     # ----------------------------------------------------------------------
 
-    def read_inverter(self, inv_cfg) -> Optional[InverterReading]:
+    def read_inverter(self, inv_cfg) -> Optional[InverterSnapshot]:
         """
         Read one inverter using fields from InverterConfig:
             inv_cfg.name
@@ -120,14 +106,18 @@ class ModbusReader:
             total    = self._safe_read(client, "energy_total")
             total_s  = self._safe_read(client, "energy_total_scale")
 
-            return InverterReading(
+            now = datetime.now(timezone.utc)
+            return InverterSnapshot(
+                name=name,
                 serial=serial or "unknown",
                 model=model or "unknown",
-                status=status,
+                status=status or 0,
+                vendor_status=None,
                 pac_w=apply_scale(pac, pac_s),
-                vdc=apply_scale(vdc, vdc_s),
-                idc=apply_scale(idc, idc_s),
-                total_wh=apply_scale(total, total_s),
+                vdc_v=apply_scale(vdc, vdc_s),
+                idc_a=apply_scale(idc, idc_s),
+                error=None,
+                timestamp=now,
             )
 
         finally:
@@ -138,7 +128,7 @@ class ModbusReader:
 
     # ----------------------------------------------------------------------
 
-    def read_all(self) -> Dict[str, InverterReading]:
+    def read_all(self) -> Dict[str, Optional[InverterSnapshot]]:
         results = {}
 
         for inv_cfg in self.modbus_cfg.inverters:
@@ -152,5 +142,6 @@ class ModbusReader:
                 results[name] = reading
             else:
                 self.log.debug(f"{name}: no data (offline?)")
+                results[name] = None
 
         return results

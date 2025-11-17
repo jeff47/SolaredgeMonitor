@@ -33,7 +33,19 @@ def build_parser():
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # For Stage 1 we only support the 'health' command.
+    # One-shot health check
     sub.add_parser("health", help="Run a one-shot health check")
+
+    # Notification test helper
+    cmd_notify = sub.add_parser(
+        "notify-test",
+        help="Send test notifications for healthy/fault scenarios",
+    )
+    cmd_notify.add_argument(
+        "--mode",
+        choices=("healthy", "fault", "both"),
+        default="both",
+        help="Which scenario(s) to simulate when sending notifications",
+    )
 
     return parser

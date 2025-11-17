@@ -14,7 +14,9 @@ def setup_logging(debug: bool = False, quiet: bool = False):
         level=level,
         format="%(message)s",
         stream=sys.stdout,
+        force=True,
     )
+    return logging.getLogger("solaredge")
 
 
 def get_logger(name: str) -> logging.Logger:
