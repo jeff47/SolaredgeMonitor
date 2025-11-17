@@ -43,6 +43,20 @@ class HealthConfig:
     min_production_for_peer_check: float
     low_light_peer_skip_threshold: float = 20.0
 
+
+@dataclass
+class DaylightConfig:
+    timezone: str = "UTC"
+    latitude: float | None = None
+    longitude: float | None = None
+    sunrise_grace_minutes: int = 30
+    sunset_grace_minutes: int = 45
+    summary_delay_minutes: int = 90
+    skip_modbus_at_night: bool = True
+    static_sunrise: str | None = "06:30"
+    static_sunset: str | None = "20:30"
+
+
 @dataclass
 class AppConfig:
     modbus: ModbusConfig
@@ -50,6 +64,7 @@ class AppConfig:
     healthchecks: HealthchecksConfig
     alerts: AlertsConfig
     health: HealthConfig
+    daylight: DaylightConfig
 
 
 class Config:
@@ -120,6 +135,30 @@ class Config:
             min_production_for_peer_check=float(health_sec.get("min_production_for_peer_check", "50")),
         )
 
+        # --- Daylight ---
+        daylight_sec = p["daylight"] if "daylight" in p else {}
+
+        def _maybe_float(key: str) -> float | None:
+            raw = daylight_sec.get(key)
+            if raw is None:
+                return None
+            raw = raw.strip()
+            if not raw:
+                return None
+            return float(raw)
+
+        daylight_cfg = DaylightConfig(
+            timezone=daylight_sec.get("timezone", "UTC"),
+            latitude=_maybe_float("latitude"),
+            longitude=_maybe_float("longitude"),
+            sunrise_grace_minutes=int(daylight_sec.get("sunrise_grace_minutes", "30")),
+            sunset_grace_minutes=int(daylight_sec.get("sunset_grace_minutes", "45")),
+            summary_delay_minutes=int(daylight_sec.get("summary_delay_minutes", "90")),
+            skip_modbus_at_night=daylight_sec.get("skip_modbus_at_night", "true").lower() == "true",
+            static_sunrise=daylight_sec.get("static_sunrise", "06:30"),
+            static_sunset=daylight_sec.get("static_sunset", "20:30"),
+        )
+
 
         return AppConfig(
             modbus=modbus,
@@ -127,4 +166,5 @@ class Config:
             healthchecks=healthchecks,
             alerts=alerts,
             health=health_cfg,
+            daylight=daylight_cfg,
         )

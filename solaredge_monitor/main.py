@@ -11,6 +11,7 @@ from .services.modbus_reader import ModbusReader
 from .services.alert_logic import evaluate_alerts, Alert
 from .services.notification_manager import NotificationManager
 from .services.health_evaluator import HealthEvaluator
+from .services.daylight_policy import DaylightPolicy
 
 
 def main():
@@ -23,10 +24,21 @@ def main():
     # Instantiate services
     notifier = NotificationManager(app_cfg.pushover, app_cfg.healthchecks, log)
     evaluator = HealthEvaluator(app_cfg.health, log)
+    daylight_policy = DaylightPolicy(app_cfg.daylight, log)
 
     if args.command == "health":
         reader = ModbusReader(app_cfg.modbus, log)
         now = datetime.now()
+        daylight_info = daylight_policy.get_info(now)
+
+        if daylight_info.skip_modbus:
+            log.info(
+                "Nighttime phase detected (%s); skipping Modbus polling until sunrise %s",
+                daylight_info.phase,
+                daylight_info.sunrise.astimezone().strftime("%H:%M"),
+            )
+            notifier.handle_alerts([])
+            return
         snapshots_raw = reader.read_all()
 
         if isinstance(snapshots_raw, dict):
@@ -65,7 +77,7 @@ def main():
                             f"Vdc={s.vdc_v or 0:.1f}V  status={s.status}"
                         )
 
-        health = evaluator.evaluate(snapshot_map)
+        health = evaluator.evaluate(snapshot_map, low_light_grace=daylight_info.in_grace_window)
 
         # --- Alerts + notifications ---
         alerts = evaluate_alerts(health, now)

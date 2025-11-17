@@ -156,7 +156,16 @@ class HealthEvaluator:
     # ----------------------------------------------------------------------
     # System-level evaluation
     # ----------------------------------------------------------------------
-    def evaluate(self, readings: Dict[str, InverterSnapshot]) -> SystemHealth:
+    def _clear_pac_related_flags(self, per_inverter: Dict[str, InverterHealth]) -> None:
+        for inv_state in per_inverter.values():
+            if inv_state.inverter_ok:
+                continue
+            reason = (inv_state.reason or "").lower()
+            if "pac" in reason or "peer" in reason:
+                inv_state.inverter_ok = True
+                inv_state.reason = None
+
+    def evaluate(self, readings: Dict[str, InverterSnapshot], low_light_grace: bool = False) -> SystemHealth:
         # --------------------------------------------------------------
         # 1. FIRST: per-inverter checks (never skipped)
         # --------------------------------------------------------------
@@ -225,6 +234,9 @@ class HealthEvaluator:
         # --------------------------------------------------------------
         self._peer_compare(per_inverter)
 
+        if low_light_grace:
+            self._clear_pac_related_flags(per_inverter)
+
         # --------------------------------------------------------------
         # 5. Aggregate system health
         # --------------------------------------------------------------
@@ -242,7 +254,6 @@ class HealthEvaluator:
             per_inverter=per_inverter,
             reason=None,
         )
-
 
 
 
