@@ -214,3 +214,35 @@ class SolarEdgeAPIClient:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    # ------------------------------------------------------------------
+    def get_inverter_daily_energy(self, serial: str, day: date) -> Optional[float]:
+        if not self.enabled:
+            return None
+
+        serial_norm = self._normalize_serial(serial) or serial
+        path = f"/site/{self.cfg.site_id}/equipment/{serial_norm}/data"
+        params = {
+            "startTime": f"{day.isoformat()} 00:00:00",
+            "endTime": f"{day.isoformat()} 23:59:59",
+        }
+        data = self._get(path, params=params)
+        if not isinstance(data, dict):
+            return None
+
+        payload = data.get("data") or {}
+        values = payload.get("values") or []
+        total = 0.0
+        found = False
+
+        for entry in values:
+            if not isinstance(entry, dict):
+                continue
+            value = entry.get("value")
+            try:
+                total += float(value)
+                found = True
+            except (TypeError, ValueError):
+                continue
+
+        return total if found else None

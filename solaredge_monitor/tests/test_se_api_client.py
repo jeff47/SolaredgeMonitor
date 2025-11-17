@@ -121,3 +121,21 @@ def test_optimizer_expectation_alerts():
 
     alerts = client.check_optimizer_expectations({"INV-A": 10})
     assert alerts == ["[INV-A] Optimizer count mismatch (expected 10, got 8)"]
+
+
+def test_get_inverter_daily_energy(tmp_path):
+    equipment_payload = {
+        "data": {
+            "values": [
+                {"date": "2024-06-01 10:00:00", "value": 10},
+                {"date": "2024-06-01 14:00:00", "value": 5},
+            ]
+        }
+    }
+    session = FakeSession({
+        "https://api.test/site/123/equipment/ABC/data": (200, equipment_payload)
+    })
+    client = SolarEdgeAPIClient(_cfg(), LOG, session=session)
+
+    energy = client.get_inverter_daily_energy("abc", date(2024, 6, 1))
+    assert energy == 15

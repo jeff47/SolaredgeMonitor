@@ -1,7 +1,6 @@
 # solaredge_monitor/main.py
 
 from datetime import datetime
-import json
 
 from .cli import build_parser
 from .config import Config
@@ -13,6 +12,8 @@ from .services.notification_manager import NotificationManager
 from .services.health_evaluator import HealthEvaluator
 from .services.daylight_policy import DaylightPolicy
 from .services.se_api_client import SolarEdgeAPIClient
+from .services.daily_summary import DailySummaryService
+from .services.output_formatter import emit_json, emit_human
 
 
 def main():
@@ -27,6 +28,7 @@ def main():
     evaluator = HealthEvaluator(app_cfg.health, log)
     daylight_policy = DaylightPolicy(app_cfg.daylight, log)
     se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
+    summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log)
 
     if args.command == "health":
         reader = ModbusReader(app_cfg.modbus, log)
@@ -69,49 +71,9 @@ def main():
         # --- stdout output ---
         if snapshot_items and not args.quiet:
             if args.json:
-                # JSON output
-                payload = []
-                for name, s in snapshot_items:
-                    if s is None:
-                        payload.append({"name": name, "error": "No Modbus data"})
-                        continue
-                    cloud_status = None
-                    if cloud_by_serial and s.serial:
-                        inv = cloud_by_serial.get(s.serial.upper())
-                        if inv:
-                            cloud_status = inv.status
-                    payload.append(
-                        {
-                            "name": s.name,
-                            "serial": s.serial,
-                            "model": s.model,
-                            "status": s.status,
-                            "cloud_status": cloud_status,
-                            "pac_w": s.pac_w,
-                            "vdc_v": s.vdc_v,
-                            "idc_a": s.idc_a,
-                            "error": s.error,
-                        }
-                    )
-                print(json.dumps({"inverters": payload}, indent=2))
+                emit_json(snapshot_items, cloud_by_serial)
             else:
-                # Human-readable output
-                for name, s in snapshot_items:
-                    if s is None:
-                        print(f"[{name}] OFFLINE: no Modbus data")
-                    elif s.error:
-                        print(f"[{name}] ERROR: {s.error}")
-                    else:
-                        cloud_status = None
-                        if cloud_by_serial and s.serial:
-                            inv = cloud_by_serial.get(s.serial.upper())
-                            if inv:
-                                cloud_status = inv.status
-                        cloud_txt = f" cloud={cloud_status}" if cloud_status is not None else ""
-                        print(
-                            f"[{name}] PAC={s.pac_w or 0:.0f}W  "
-                            f"Vdc={s.vdc_v or 0:.1f}V  status={s.status}{cloud_txt}"
-                        )
+                emit_human(snapshot_items, cloud_by_serial)
 
         health = None
         if snapshot_items:
@@ -190,6 +152,18 @@ def main():
                 )
 
         notifier.handle_alerts(alerts)
+
+        should_run_summary = summary_service.should_run(now.date(), daylight_info)
+        if should_run_summary:
+            if se_skip and app_cfg.solaredge_api.skip_at_night:
+                log.info(
+                    "Running daily summary despite nightly SolarEdge API skip setting."
+                )
+            summary_inventory = (
+                None if (se_skip and app_cfg.solaredge_api.skip_at_night)
+                else (cloud_inverters or None)
+            )
+            summary_service.run(now.date(), inventory=summary_inventory)
     elif args.command == "notify-test":
         mode = args.mode
 
