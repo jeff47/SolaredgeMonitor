@@ -21,6 +21,15 @@ def _eval(values):
     return evaluator.evaluate(reader.read_all())
 
 
+def _mark_optimizer_mismatch(health, name: str, expected: int, actual: int | None):
+    inv = health.per_inverter[name]
+    actual_txt = "unknown" if actual is None else f"{actual}"
+    inv.reason = (
+        f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})"
+    )
+    inv.inverter_ok = False
+
+
 # ------------------------------------------------------------------------------
 # 1. Both producing normally
 # ------------------------------------------------------------------------------
@@ -273,3 +282,19 @@ def test_midrange_asymmetry_should_fail():
         "B": {"status": 4, "pac_w": 5,   "vdc_v": 350},
     })
     assert not health.system_ok
+
+
+def test_optimizer_count_mismatch_flags_inverter():
+    health = _eval({
+        "A": {"status": 4, "pac_w": 900, "vdc_v": 380},
+        "B": {"status": 4, "pac_w": 850, "vdc_v": 378},
+    })
+    assert health.system_ok
+
+    _mark_optimizer_mismatch(health, "A", expected=16, actual=12)
+
+    health.system_ok = all(inv.inverter_ok for inv in health.per_inverter.values())
+
+    assert not health.system_ok
+    assert not health.per_inverter["A"].inverter_ok
+    assert "Optimizer count mismatch" in health.per_inverter["A"].reason

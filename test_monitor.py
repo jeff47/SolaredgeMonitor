@@ -15,7 +15,7 @@ from pathlib import Path
 from solaredge_monitor.config import Config
 from solaredge_monitor.services.modbus_reader import ModbusReader
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
-from solaredge_monitor.util.logging import get_logger
+from solaredge_monitor.util.logging import setup_logging
 
 
 CONFIG_PATH = "solaredge_monitor.conf"
@@ -24,19 +24,23 @@ CONFIG_PATH = "solaredge_monitor.conf"
 def pretty_print_reading(r):
     if r is None:
         return "None"
+    if getattr(r, "error", None):
+        return f"ERROR: {r.error}"
+    pac = r.pac_w or 0.0
+    vdc = r.vdc_v or 0.0
+    idc = r.idc_a or 0.0
     return (
         f"serial={r.serial}, "
         f"model={r.model}, "
         f"status={r.status}, "
-        f"PAC={r.pac_w:.1f}W, "
-        f"Vdc={r.vdc:.1f}V, "
-        f"Idc={r.idc:.3f}A, "
-        f"total_wh={r.total_wh}"
+        f"PAC={pac:.1f}W, "
+        f"Vdc={vdc:.1f}V, "
+        f"Idc={idc:.3f}A"
     )
 
 
 def main():
-    log = get_logger("test")
+    log = setup_logging()
 
     # ------------------------
     # Load config
@@ -69,10 +73,10 @@ def main():
     # Health evaluation
     # ------------------------
     evaluator = HealthEvaluator(cfg.health, log)
-    system = evaluator.evaluate_system(readings)
+    system = evaluator.evaluate(readings)
 
     print("\n=== SYSTEM HEALTH ===")
-    if system.ok:
+    if system.system_ok:
         print("System OK")
     else:
         print("System NOT OK")
@@ -80,10 +84,10 @@ def main():
 
     print("\n=== INVERTER STATES ===")
     for name, inv in system.per_inverter.items():
-        print(f"{name}: ok={inv.ok}, reason={inv.reason}")
+        print(f"{name}: ok={inv.inverter_ok}, reason={inv.reason}")
 
     # Exit code indicates success/failure
-    return 0 if system.ok else 10
+    return 0 if system.system_ok else 10
 
 
 if __name__ == "__main__":

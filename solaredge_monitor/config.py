@@ -1,5 +1,5 @@
 # solaredge_monitor/config.py
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import configparser
 
@@ -10,6 +10,7 @@ class InverterConfig:
     host: str
     port: int
     unit: int
+    expected_optimizers: int | None = None
 
 
 @dataclass
@@ -17,6 +18,7 @@ class ModbusConfig:
     inverters: list[InverterConfig]
     retries: int
     timeout: float
+    skip_modbus_at_night: bool = True
 
 
 @dataclass
@@ -58,6 +60,16 @@ class DaylightConfig:
 
 
 @dataclass
+class SolarEdgeAPIConfig:
+    enabled: bool = False
+    api_key: str | None = None
+    site_id: str | None = None
+    base_url: str = "https://monitoringapi.solaredge.com"
+    timeout: float = 20.0
+    skip_at_night: bool = False
+
+
+@dataclass
 class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
@@ -65,12 +77,13 @@ class AppConfig:
     alerts: AlertsConfig
     health: HealthConfig
     daylight: DaylightConfig
+    solaredge_api: SolarEdgeAPIConfig
 
 
 class Config:
     def __init__(self, path: str):
         self.path = Path(path)
-        self.parser = configparser.ConfigParser()
+        self.parser = configparser.ConfigParser(inline_comment_prefixes=("#",))
         read = self.parser.read(self.path)
         if not read:
             raise FileNotFoundError(f"Config file not found: {self.path}")
@@ -98,13 +111,17 @@ class Config:
                     host=inv_sec["host"],
                     port=int(inv_sec.get("port", "1502")),
                     unit=int(inv_sec.get("unit", "1")),
+                    expected_optimizers=(int(inv_sec["expected_optimizers"]) if "expected_optimizers" in inv_sec else None),
                 )
             )
+
+        skip_modbus = p["modbus"].get("skip_modbus_at_night", "true").lower() == "true"
 
         modbus = ModbusConfig(
             inverters=inverters,
             retries=int(p["modbus"].get("retries", "3")),
             timeout=float(p["modbus"].get("timeout", "3.0")),
+            skip_modbus_at_night=skip_modbus,
         )
 
         # --- Pushover ---
@@ -154,9 +171,27 @@ class Config:
             sunrise_grace_minutes=int(daylight_sec.get("sunrise_grace_minutes", "30")),
             sunset_grace_minutes=int(daylight_sec.get("sunset_grace_minutes", "45")),
             summary_delay_minutes=int(daylight_sec.get("summary_delay_minutes", "90")),
-            skip_modbus_at_night=daylight_sec.get("skip_modbus_at_night", "true").lower() == "true",
+            skip_modbus_at_night=skip_modbus,
             static_sunrise=daylight_sec.get("static_sunrise", "06:30"),
             static_sunset=daylight_sec.get("static_sunset", "20:30"),
+        )
+
+        # --- SolarEdge API ---
+        se_api_sec = p["solaredge_api"] if "solaredge_api" in p else {}
+
+        solaredge_api_cfg = SolarEdgeAPIConfig(
+            enabled=se_api_sec.get("enabled", "false").lower() == "true",
+            api_key=(
+                se_api_sec.get("api_key")
+                or se_api_sec.get("solaredge_api_key")
+            ),
+            site_id=(
+                se_api_sec.get("site_id")
+                or se_api_sec.get("solaredge_site_id")
+            ),
+            base_url=se_api_sec.get("base_url", "https://monitoringapi.solaredge.com"),
+            timeout=float(se_api_sec.get("timeout", "20")),
+            skip_at_night=se_api_sec.get("skip_se_api_at_night", "false").lower() == "true",
         )
 
 
@@ -167,4 +202,5 @@ class Config:
             alerts=alerts,
             health=health_cfg,
             daylight=daylight_cfg,
+            solaredge_api=solaredge_api_cfg,
         )
