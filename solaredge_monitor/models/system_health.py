@@ -1,13 +1,19 @@
+# solaredge_monitor/models/system_health.py
 from dataclasses import dataclass
+from typing import Optional, Dict
+from solaredge_monitor.models.inverter import InverterSnapshot
+
 
 @dataclass
-class HealthIssue:
-    severity: str   # OK, WARN, ALERT
-    message: str
-    inverter_serial: str | None = None
+class InverterHealth:
+    name: str
+    inverter_ok: bool
+    reason: Optional[str]
+    reading: Optional[InverterSnapshot]
+
 
 @dataclass
 class SystemHealth:
-    overall_status: str
-    issues: list[HealthIssue]
-    summary: str
+    system_ok: bool
+    per_inverter: Dict[str, InverterHealth]
+    reason: Optional[str]

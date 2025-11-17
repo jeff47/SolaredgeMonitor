@@ -1,0 +1,15 @@
+{
+  "id": "peer_mismatch",
+  "description": "One inverter far below its peer should fail peer comparison.",
+  "readings": {
+    "INV-A": {"status": 4, "pac_w": 1600, "vdc_v": 400},
+    "INV-B": {"status": 4, "pac_w": 200, "vdc_v": 398}
+  },
+  "expected": {
+    "system_ok": false,
+    "per_inverter": {
+      "INV-A": {"inverter_ok": true, "reason_should_be_none": true},
+      "INV-B": {"inverter_ok": false, "reason_contains": "ratio"}
+    }
+  }
+}

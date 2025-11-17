@@ -1,0 +1,15 @@
+{
+  "id": "healthy_normal",
+  "description": "Both inverters producing normally should be healthy.",
+  "readings": {
+    "INV-A": {"status": 4, "pac_w": 1450, "vdc_v": 395},
+    "INV-B": {"status": 4, "pac_w": 1400, "vdc_v": 390}
+  },
+  "expected": {
+    "system_ok": true,
+    "per_inverter": {
+      "INV-A": {"inverter_ok": true, "reason_should_be_none": true},
+      "INV-B": {"inverter_ok": true, "reason_should_be_none": true}
+    }
+  }
+}

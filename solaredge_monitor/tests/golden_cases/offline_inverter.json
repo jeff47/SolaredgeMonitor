@@ -1,0 +1,15 @@
+{
+  "id": "offline_inverter",
+  "description": "Missing Modbus data for an inverter should make the system unhealthy.",
+  "readings": {
+    "INV-A": {"status": 4, "pac_w": 800, "vdc_v": 390},
+    "INV-B": null
+  },
+  "expected": {
+    "system_ok": false,
+    "per_inverter": {
+      "INV-A": {"inverter_ok": true, "reason_should_be_none": true},
+      "INV-B": {"inverter_ok": false, "reason_contains": "No Modbus data"}
+    }
+  }
+}

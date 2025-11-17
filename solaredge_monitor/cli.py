@@ -9,7 +9,7 @@ def build_parser():
 
     parser.add_argument(
         "--config",
-        default="/etc/solaredge-monitor.conf",
+        default="solaredge_monitor.conf",
         help="Path to configuration file"
     )
 
@@ -22,20 +22,18 @@ def build_parser():
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Suppress console output (cron-friendly)"
+        help="Suppress stdout output (cron-friendly)"
+    )
+
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON instead of human-readable text"
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("health", help="Run system health check")
-    sub.add_parser("daily-summary", help="Send daily production summary")
-
-    sim = sub.add_parser("simulate", help="Simulate fault conditions")
-    sim.add_argument(
-        "--fault",
-        required=True,
-        choices=["offline", "low-output", "safedc", "no-optimizers"],
-        help="Fault type to simulate"
-    )
+    # For Stage 1 we only support the 'health' command.
+    sub.add_parser("health", help="Run a one-shot health check")
 
     return parser

@@ -1,0 +1,15 @@
+{
+  "id": "cloudy_low_light",
+  "description": "Very low PAC everywhere should trigger cloudy override and stay healthy.",
+  "readings": {
+    "INV-A": {"status": 4, "pac_w": 12, "vdc_v": 360},
+    "INV-B": {"status": 4, "pac_w": 15, "vdc_v": 355}
+  },
+  "expected": {
+    "system_ok": true,
+    "per_inverter": {
+      "INV-A": {"inverter_ok": true, "reason_should_be_none": true},
+      "INV-B": {"inverter_ok": true, "reason_should_be_none": true}
+    }
+  }
+}
