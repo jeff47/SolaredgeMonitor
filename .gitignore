@@ -43,6 +43,7 @@ node_modules/
 
 # --- Secrets / Config ---
 .env
+*.conf
 *.key
 *.pem
 *.crt
