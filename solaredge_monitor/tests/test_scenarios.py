@@ -4,6 +4,7 @@ import pytest
 from solaredge_monitor.tests.fake_reader import MockModbusReader
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
 from solaredge_monitor.util.logging import setup_logging, get_logger
+from solaredge_monitor.config import InverterConfig
 
 
 # Minimal health config for evaluator
@@ -19,15 +20,6 @@ def _eval(values):
     evaluator = HealthEvaluator(DummyCfg(), log)
     reader = MockModbusReader(values, log)
     return evaluator.evaluate(reader.read_all())
-
-
-def _mark_optimizer_mismatch(health, name: str, expected: int, actual: int | None):
-    inv = health.per_inverter[name]
-    actual_txt = "unknown" if actual is None else f"{actual}"
-    inv.reason = (
-        f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})"
-    )
-    inv.inverter_ok = False
 
 
 # ------------------------------------------------------------------------------
@@ -285,16 +277,31 @@ def test_midrange_asymmetry_should_fail():
 
 
 def test_optimizer_count_mismatch_flags_inverter():
-    health = _eval({
+    setup_logging(debug=False)
+    log = get_logger("test")
+    evaluator = HealthEvaluator(DummyCfg(), log)
+    reader = MockModbusReader({
         "A": {"status": 4, "pac_w": 900, "vdc_v": 380},
         "B": {"status": 4, "pac_w": 850, "vdc_v": 378},
-    })
+    }, log)
+    snapshots = reader.read_all()
+    health = evaluator.evaluate(snapshots)
     assert health.system_ok
 
-    _mark_optimizer_mismatch(health, "A", expected=16, actual=12)
+    serial_by_name = {
+        name: snap.serial.upper()
+        for name, snap in snapshots.items()
+        if snap is not None and snap.serial
+    }
 
-    health.system_ok = all(inv.inverter_ok for inv in health.per_inverter.values())
+    cfgs = [
+        InverterConfig(name="A", host="h", port=1502, unit=1, expected_optimizers=16),
+        InverterConfig(name="B", host="h", port=1502, unit=1, expected_optimizers=None),
+    ]
+    optimizer_counts = {serial_by_name["A"]: 12}
 
+    mismatches = evaluator.update_with_optimizer_counts(health, cfgs, serial_by_name, optimizer_counts)
+    assert mismatches == [("A", 16, 12)]
     assert not health.system_ok
     assert not health.per_inverter["A"].inverter_ok
     assert "Optimizer count mismatch" in health.per_inverter["A"].reason

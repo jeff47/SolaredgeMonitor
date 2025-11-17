@@ -14,6 +14,7 @@ from .services.se_api_client import SolarEdgeAPIClient
 from .services.daily_summary import DailySummaryService
 from .services.output_formatter import emit_json, emit_human
 from .services.alert_state import AlertStateManager
+from .services.alert_logic import Alert
 
 
 def main():
@@ -83,25 +84,21 @@ def main():
         if snapshot_items:
             health = evaluator.evaluate(snapshot_map, low_light_grace=daylight_info.in_grace_window)
 
-        expected_counts = {
-            cfg_inv.name: cfg_inv.expected_optimizers
-            for cfg_inv in app_cfg.modbus.inverters
-            if cfg_inv.expected_optimizers is not None
-        }
         optimizer_mismatches: list[tuple[str, int, int | None]] = []
+        has_optimizer_expectations = any(
+            inv_cfg.expected_optimizers is not None for inv_cfg in app_cfg.modbus.inverters
+        )
 
-        if se_client.enabled and not se_skip and expected_counts:
+        if se_client.enabled and not se_skip and has_optimizer_expectations:
             optimizer_counts_by_serial = se_client.get_optimizer_counts(cloud_inverters or None)
-            optimizer_mismatches = evaluator.optimizer_mismatches_from_counts(
-                expected_counts,
+            optimizer_mismatches = evaluator.update_with_optimizer_counts(
+                health,
+                app_cfg.modbus.inverters,
                 serial_by_name,
                 optimizer_counts_by_serial,
             )
-        elif se_client.enabled and se_skip:
+        elif se_client.enabled and se_skip and has_optimizer_expectations:
             log.info("SolarEdge API polling skipped at night (configuration).")
-
-        if health and optimizer_mismatches:
-            evaluator.apply_optimizer_mismatches(health, optimizer_mismatches)
 
         alerts = alert_manager.build_alerts(
             now=now,
@@ -121,7 +118,12 @@ def main():
                 None if (se_skip and app_cfg.solaredge_api.skip_at_night)
                 else (cloud_inverters or None)
             )
-            summary_service.run(now.date(), inventory=summary_inventory)
+            summary = summary_service.run(now.date(), inventory=summary_inventory)
+            if summary:
+                summary_text = summary_service.format_summary(summary)
+                print("\n=== DAILY SUMMARY ===")
+                print(summary_text)
+                notifier.send_daily_summary(summary_text)
     elif args.command == "notify-test":
         mode = args.mode
 

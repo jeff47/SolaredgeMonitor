@@ -42,3 +42,17 @@ class NotificationManager:
         self.log.info("Sending test notification via Pushover and Healthchecks...")
         self.pushover.send_test()
         self.healthchecks.send_test()
+
+    # ------------------------------------------------------------------
+    def send_daily_summary(self, summary_text: str) -> None:
+        """Send the formatted daily summary via Pushover only."""
+        if not summary_text:
+            return
+        pseudo_alert = Alert(
+            inverter_name="SUMMARY",
+            serial="SUMMARY",
+            message=summary_text,
+            status=-1,
+            pac_w=None,
+        )
+        self.pushover.send_alerts([pseudo_alert])

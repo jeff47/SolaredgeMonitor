@@ -1,9 +1,9 @@
 # solaredge_monitor/services/health_evaluator.py
 
 from __future__ import annotations
-from typing import Dict, Optional, Any, List, Tuple
+from typing import Dict, Optional, Any, List, Tuple, Iterable
 
-from solaredge_monitor.config import HealthConfig
+from solaredge_monitor.config import HealthConfig, InverterConfig
 from solaredge_monitor.models.system_health import InverterHealth, SystemHealth
 from solaredge_monitor.models.inverter import InverterSnapshot
 from typing import List, Tuple
@@ -293,16 +293,38 @@ class HealthEvaluator:
                 inv_state.reason = reason
             inv_state.inverter_ok = False
 
-    def optimizer_mismatches_from_counts(
+    def update_with_optimizer_counts(
         self,
-        expected_counts: Dict[str, int],
+        health: Optional[SystemHealth],
+        inverter_cfgs: Iterable[InverterConfig],
         serial_by_name: Dict[str, str],
         optimizer_counts_by_serial: Dict[str, Optional[int]],
     ) -> List[Tuple[str, int, Optional[int]]]:
-        mismatches: List[Tuple[str, int, Optional[int]]] = []
-        for name, expected in expected_counts.items():
-            serial = serial_by_name.get(name)
-            actual = optimizer_counts_by_serial.get(serial) if serial else None
-            if actual is None or actual != expected:
-                mismatches.append((name, expected, actual))
+        expected_counts = {
+            cfg.name: cfg.expected_optimizers
+            for cfg in inverter_cfgs
+            if cfg.expected_optimizers is not None
+        }
+        if not expected_counts:
+            return []
+
+        actual_counts: Dict[str, Optional[int]] = {}
+        for cfg in inverter_cfgs:
+            if cfg.expected_optimizers is None:
+                continue
+            serial = serial_by_name.get(cfg.name)
+            actual_counts[cfg.name] = (
+                optimizer_counts_by_serial.get(serial) if serial else None
+            )
+
+        mismatches = self.compute_optimizer_mismatches(expected_counts, actual_counts)
+
+        if health and mismatches:
+            self.apply_optimizer_mismatches(health, mismatches)
+            health.system_ok = all(inv.inverter_ok for inv in health.per_inverter.values())
+            if not health.system_ok:
+                bad = [inv for inv in health.per_inverter.values() if not inv.inverter_ok]
+                if bad:
+                    health.reason = "; ".join(f"{b.name}: {b.reason}" for b in bad)
+
         return mismatches

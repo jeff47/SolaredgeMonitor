@@ -72,4 +72,7 @@ def test_daily_summary_runs_once(tmp_path):
     assert summary.site_wh == 4000.0
     energies = dict(summary.per_inverter_wh)
     assert energies["INV-A"] == 2000.0
+    formatted = svc.format_summary(summary)
+    assert "Daily production for 2024-06-01" in formatted
+    assert "Site total" in formatted
     assert not svc.should_run(today, info)

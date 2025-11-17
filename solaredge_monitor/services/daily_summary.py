@@ -83,7 +83,6 @@ class DailySummaryService:
             per_inverter.append((inv_cfg.name, energy))
 
         summary = SummaryResult(day=day, site_wh=site_wh, per_inverter_wh=per_inverter)
-        self._print_summary(summary)
         self.mark_ran(day)
         return summary
 
@@ -95,23 +94,21 @@ class DailySummaryService:
         return None
 
     # ------------------------------------------------------------------
-    def _print_summary(self, summary: SummaryResult) -> None:
-        print("\n=== DAILY SUMMARY ===")
-        print(f"Date: {summary.day.isoformat()}")
+    def format_summary(self, summary: SummaryResult) -> str:
+        lines = [f"Daily production for {summary.day.isoformat()}"]
 
         if summary.site_wh is not None:
             kwh = summary.site_wh / 1000.0
-            print(f"Site production: {kwh:.2f} kWh ({summary.site_wh:.0f} Wh)")
+            lines.append(f"Site total: {kwh:.2f} kWh ({summary.site_wh:.0f} Wh)")
         else:
-            print("Site production: unavailable")
+            lines.append("Site total: unavailable")
 
-        if not summary.per_inverter_wh:
-            print("No inverter data available.")
-            return
+        if summary.per_inverter_wh:
+            lines.append("Per-inverter:")
+            for name, energy in summary.per_inverter_wh:
+                if energy is None:
+                    lines.append(f" - {name}: unavailable")
+                else:
+                    lines.append(f" - {name}: {energy / 1000.0:.2f} kWh ({energy:.0f} Wh)")
 
-        print("Per-inverter production:")
-        for name, energy in summary.per_inverter_wh:
-            if energy is None:
-                print(f" - {name}: unavailable")
-            else:
-                print(f" - {name}: {energy / 1000.0:.2f} kWh ({energy:.0f} Wh)")
+        return "\n".join(lines)
