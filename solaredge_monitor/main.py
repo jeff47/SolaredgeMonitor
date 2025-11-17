@@ -7,13 +7,13 @@ from .config import Config
 from .util.logging import setup_logging
 
 from .services.modbus_reader import ModbusReader
-from .services.alert_logic import evaluate_alerts, Alert
 from .services.notification_manager import NotificationManager
 from .services.health_evaluator import HealthEvaluator
 from .services.daylight_policy import DaylightPolicy
 from .services.se_api_client import SolarEdgeAPIClient
 from .services.daily_summary import DailySummaryService
 from .services.output_formatter import emit_json, emit_human
+from .services.alert_state import AlertStateManager
 
 
 def main():
@@ -29,14 +29,13 @@ def main():
     daylight_policy = DaylightPolicy(app_cfg.daylight, log)
     se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
     summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log)
+    alert_manager = AlertStateManager(log)
 
     if args.command == "health":
         reader = ModbusReader(app_cfg.modbus, log)
         now = datetime.now()
         daylight_info = daylight_policy.get_info(now)
         se_skip = daylight_info.skip_modbus and app_cfg.solaredge_api.skip_at_night
-
-        alerts: list[Alert] = []
 
         cloud_inverters = []
         cloud_by_serial = {}
@@ -67,6 +66,11 @@ def main():
         if se_client.enabled and not se_skip:
             cloud_inverters = se_client.fetch_inverters()
             cloud_by_serial = {inv.serial: inv for inv in cloud_inverters}
+            for inv in cloud_inverters:
+                serial = (inv.serial or "").upper()
+                if not serial:
+                    continue
+                serial_by_name.setdefault(inv.name, serial)
 
         # --- stdout output ---
         if snapshot_items and not args.quiet:
@@ -84,72 +88,26 @@ def main():
             for cfg_inv in app_cfg.modbus.inverters
             if cfg_inv.expected_optimizers is not None
         }
-        mismatched_optimizer_inverters: dict[str, tuple[int, int | None]] = {}
+        optimizer_mismatches: list[tuple[str, int, int | None]] = []
 
         if se_client.enabled and not se_skip and expected_counts:
-            api_messages = se_client.check_optimizer_expectations(cloud_inverters or None)
-            optimizer_counts = se_client.get_optimizer_counts(cloud_inverters or None)
-
-            for inv_cfg in app_cfg.modbus.inverters:
-                expected = inv_cfg.expected_optimizers
-                if expected is None:
-                    continue
-
-                # Determine serial by matching against cloud inventory
-                serial = serial_by_name.get(inv_cfg.name)
-                if not serial:
-                    for cloud in cloud_inverters:
-                        if cloud.name == inv_cfg.name:
-                            serial = (cloud.serial or "").upper()
-                            break
-                if not serial:
-                    continue
-
-                actual = optimizer_counts.get(serial)
-                if actual != expected:
-                    mismatched_optimizer_inverters[inv_cfg.name] = (expected, actual)
-
-            for msg in api_messages:
-                alerts.append(
-                    Alert(
-                        inverter_name="CLOUD",
-                        serial="CLOUD",
-                        message=msg,
-                        status=-1,
-                        pac_w=None,
-                    )
-                )
+            optimizer_counts_by_serial = se_client.get_optimizer_counts(cloud_inverters or None)
+            optimizer_mismatches = evaluator.optimizer_mismatches_from_counts(
+                expected_counts,
+                serial_by_name,
+                optimizer_counts_by_serial,
+            )
         elif se_client.enabled and se_skip:
             log.info("SolarEdge API polling skipped at night (configuration).")
 
-        if health:
-            for inv_name, (expected, actual) in mismatched_optimizer_inverters.items():
-                inv_state = health.per_inverter.get(inv_name)
-                if not inv_state:
-                    continue
-                actual_txt = "unknown" if actual is None else str(actual)
-                reason = (
-                    f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})"
-                )
-                if inv_state.reason:
-                    inv_state.reason += "; " + reason
-                else:
-                    inv_state.reason = reason
-                inv_state.inverter_ok = False
+        if health and optimizer_mismatches:
+            evaluator.apply_optimizer_mismatches(health, optimizer_mismatches)
 
-            alerts.extend(evaluate_alerts(health, now))
-        elif mismatched_optimizer_inverters:
-            for inv_name, (expected, actual) in mismatched_optimizer_inverters.items():
-                actual_txt = "unknown" if actual is None else str(actual)
-                alerts.append(
-                    Alert(
-                        inverter_name=inv_name,
-                        serial="CLOUD",
-                        message=f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})",
-                        status=-1,
-                        pac_w=None,
-                    )
-                )
+        alerts = alert_manager.build_alerts(
+            now=now,
+            health=health,
+            optimizer_mismatches=optimizer_mismatches,
+        )
 
         notifier.handle_alerts(alerts)
 

@@ -1,11 +1,12 @@
 # solaredge_monitor/services/health_evaluator.py
 
 from __future__ import annotations
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List, Tuple
 
 from solaredge_monitor.config import HealthConfig
 from solaredge_monitor.models.system_health import InverterHealth, SystemHealth
 from solaredge_monitor.models.inverter import InverterSnapshot
+from typing import List, Tuple
 
 
 class HealthEvaluator:
@@ -255,5 +256,53 @@ class HealthEvaluator:
             reason=None,
         )
 
+    # ----------------------------------------------------------------------
+    # Optimizer count validation helpers
+    # ----------------------------------------------------------------------
+    def compute_optimizer_mismatches(
+        self,
+        expected_counts: Dict[str, int],
+        actual_counts: Dict[str, Optional[int]],
+    ) -> List[Tuple[str, int, Optional[int]]]:
+        mismatches: List[Tuple[str, int, Optional[int]]] = []
+        for name, expected in expected_counts.items():
+            actual = actual_counts.get(name)
+            if actual is None or actual != expected:
+                mismatches.append((name, expected, actual))
+        return mismatches
 
+    def apply_optimizer_mismatches(
+        self,
+        health: SystemHealth,
+        mismatches: List[Tuple[str, int, Optional[int]]],
+    ) -> None:
+        if not mismatches:
+            return
 
+        for name, expected, actual in mismatches:
+            inv_state = health.per_inverter.get(name)
+            if not inv_state:
+                continue
+            actual_txt = "unknown" if actual is None else str(actual)
+            reason = (
+                f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})"
+            )
+            if inv_state.reason:
+                inv_state.reason += "; " + reason
+            else:
+                inv_state.reason = reason
+            inv_state.inverter_ok = False
+
+    def optimizer_mismatches_from_counts(
+        self,
+        expected_counts: Dict[str, int],
+        serial_by_name: Dict[str, str],
+        optimizer_counts_by_serial: Dict[str, Optional[int]],
+    ) -> List[Tuple[str, int, Optional[int]]]:
+        mismatches: List[Tuple[str, int, Optional[int]]] = []
+        for name, expected in expected_counts.items():
+            serial = serial_by_name.get(name)
+            actual = optimizer_counts_by_serial.get(serial) if serial else None
+            if actual is None or actual != expected:
+                mismatches.append((name, expected, actual))
+        return mismatches
