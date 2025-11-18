@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -40,11 +42,29 @@ class AppState:
     def flush(self) -> None:
         if not self._dirty:
             return
+
+        tmp_path = None
+        serialized = json.dumps(self.data, indent=2)
         try:
-            self.path.write_text(json.dumps(self.data, indent=2))
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=self.path.parent,
+                delete=False,
+            ) as tmp_file:
+                tmp_file.write(serialized)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+                tmp_path = Path(tmp_file.name)
+            os.replace(tmp_path, self.path)
             self._dirty = False
         except Exception as exc:
             self._log.warning("Failed to write state file %s: %s", self.path, exc)
+            if tmp_path:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def save(self) -> None:
         self.flush()
