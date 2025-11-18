@@ -116,6 +116,7 @@ class ModbusReader:
                 pac_w=apply_scale(pac, pac_s),
                 vdc_v=apply_scale(vdc, vdc_s),
                 idc_a=apply_scale(idc, idc_s),
+                total_wh=apply_scale(total, total_s),
                 error=None,
                 timestamp=now,
             )

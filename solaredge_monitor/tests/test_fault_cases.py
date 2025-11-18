@@ -147,6 +147,7 @@ def test_inverter_offline():
             pac_w=vals.get("pac_w", 0.0),
             vdc_v=vals.get("vdc_v", 0.0),
             idc_a=vals.get("idc_a", 0.0),
+            total_wh=vals.get("total_wh", 0.0),
             error=None,
             timestamp=datetime.now(timezone.utc),
         )

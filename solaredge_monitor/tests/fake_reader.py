@@ -32,6 +32,7 @@ class FakeInverterReader:
                 pac_w=vals.get("pac_w"),
                 vdc_v=vals.get("vdc_v"),
                 idc_a=vals.get("idc_a"),
+                total_wh=vals.get("total_wh"),
                 error=vals.get("error"),
                 timestamp=vals.get("timestamp", now),
             )

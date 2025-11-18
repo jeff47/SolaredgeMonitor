@@ -16,6 +16,7 @@ def _health(system_ok=True):
         pac_w=1000,
         vdc_v=400,
         idc_a=3,
+        total_wh=0.0,
         error=None,
         timestamp=datetime.now(),
     )

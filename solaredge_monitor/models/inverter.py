@@ -13,5 +13,6 @@ class InverterSnapshot:
     pac_w: float | None
     vdc_v: float | None
     idc_a: float | None
+    total_wh: float | None
     error: str | None     # non-None if Modbus read failed
     timestamp: datetime

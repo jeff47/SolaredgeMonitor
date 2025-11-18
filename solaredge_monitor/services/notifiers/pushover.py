@@ -62,3 +62,7 @@ class PushoverNotifier:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         msg = f"Test message from SolarEdge monitor at {timestamp}"
         self._post("SolarEdge Monitor Test", msg)
+
+    # ------------------------------------------------------------------
+    def send_message(self, title: str, message: str) -> None:
+        self._post(title, message)

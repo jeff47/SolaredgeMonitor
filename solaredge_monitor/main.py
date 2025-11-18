@@ -14,6 +14,7 @@ from .services.se_api_client import SolarEdgeAPIClient
 from .services.daily_summary import DailySummaryService
 from .services.output_formatter import emit_json, emit_human
 from .services.alert_state import AlertStateManager
+from .services.app_state import AppState
 from .services.alert_logic import Alert
 
 
@@ -25,11 +26,12 @@ def main():
     log = setup_logging(debug=args.debug, quiet=args.quiet)
 
     # Instantiate services
+    state = AppState()
     notifier = NotificationManager(app_cfg.pushover, app_cfg.healthchecks, log)
     evaluator = HealthEvaluator(app_cfg.health, log)
     daylight_policy = DaylightPolicy(app_cfg.daylight, log)
     se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
-    summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log)
+    summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log, state=state)
     alert_manager = AlertStateManager(log)
 
     if args.command == "health":
@@ -61,8 +63,13 @@ def main():
                 snapshot_map = {name: snap for name, snap in snapshot_items}
 
             for name, snap in snapshot_map.items():
-                if snap is not None and snap.serial:
-                    serial_by_name[name] = snap.serial.upper()
+                if snap is None:
+                    continue
+                serial = (snap.serial or name).upper()
+                serial_by_name[name] = serial
+                state.update_inverter_serial(name, serial)
+                if snap.total_wh is not None:
+                    state.update_latest_total(serial, now.date(), snap.total_wh)
 
         if se_client.enabled and not se_skip:
             cloud_inverters = se_client.fetch_inverters()
@@ -72,6 +79,11 @@ def main():
                 if not serial:
                     continue
                 serial_by_name.setdefault(inv.name, serial)
+        else:
+            for cfg in app_cfg.modbus.inverters:
+                serial = state.get_inverter_serial(cfg.name)
+                if serial:
+                    serial_by_name.setdefault(cfg.name, serial)
 
         # --- stdout output ---
         if snapshot_items and not args.quiet:
@@ -110,6 +122,10 @@ def main():
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:
+            if snapshot_map:
+                summary_modbus = snapshot_map
+            else:
+                summary_modbus = reader.read_all()
             if se_skip and app_cfg.solaredge_api.skip_at_night:
                 log.info(
                     "Running daily summary despite nightly SolarEdge API skip setting."
@@ -118,12 +134,20 @@ def main():
                 None if (se_skip and app_cfg.solaredge_api.skip_at_night)
                 else (cloud_inverters or None)
             )
-            summary = summary_service.run(now.date(), inventory=summary_inventory)
+            summary = summary_service.run(
+                now.date(),
+                inventory=summary_inventory,
+                modbus_snapshots=summary_modbus,
+            )
             if summary:
                 summary_text = summary_service.format_summary(summary)
                 print("\n=== DAILY SUMMARY ===")
                 print(summary_text)
-                notifier.send_daily_summary(summary_text)
+                notifier.send_daily_summary(
+                    summary_text,
+                    summary.site_wh_modbus,
+                    summary.site_wh_api,
+                )
     elif args.command == "notify-test":
         mode = args.mode
 

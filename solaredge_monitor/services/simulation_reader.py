@@ -73,11 +73,15 @@ class SimulationReader:
                 InverterSnapshot(
                     serial=inv,
                     name=inv,
+                    model="SIM",
+                    status=int(status),
+                    vendor_status=None,
                     pac_w=float(pac),
-                    vdc=float(vdc),
-                    idc=float(idc),
-                    status=str(status),
-                    timestamp=now
+                    vdc_v=float(vdc),
+                    idc_a=float(idc),
+                    total_wh=None,
+                    error=None,
+                    timestamp=now,
                 )
             )
 

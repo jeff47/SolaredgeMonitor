@@ -12,7 +12,8 @@ def setup_logging(debug: bool = False, quiet: bool = False):
 
     logging.basicConfig(
         level=level,
-        format="%(message)s",
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stdout,
         force=True,
     )

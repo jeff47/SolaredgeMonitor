@@ -44,15 +44,15 @@ class NotificationManager:
         self.healthchecks.send_test()
 
     # ------------------------------------------------------------------
-    def send_daily_summary(self, summary_text: str) -> None:
+    def send_daily_summary(
+        self,
+        summary_text: str,
+        modbus_wh: float | None,
+        api_wh: float | None,
+    ) -> None:
         """Send the formatted daily summary via Pushover only."""
         if not summary_text:
             return
-        pseudo_alert = Alert(
-            inverter_name="SUMMARY",
-            serial="SUMMARY",
-            message=summary_text,
-            status=-1,
-            pac_w=None,
-        )
-        self.pushover.send_alerts([pseudo_alert])
+        title_wh = modbus_wh if modbus_wh is not None else api_wh or 0.0
+        title = f"SolarEdge Daily Production: {title_wh / 1000.0:.2f} kWh"
+        self.pushover.send_message(title, summary_text)
