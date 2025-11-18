@@ -19,6 +19,66 @@ from .services.app_state import AppState
 from .services.alert_logic import Alert
 
 
+def run_notify_test(notifier: NotificationManager, log, mode: str) -> None:
+    if mode in ("healthy", "both"):
+        log.info("[notify-test] Simulating healthy system (no alerts).")
+        notifier.handle_alerts([])
+
+    if mode in ("fault", "both"):
+        log.info("[notify-test] Simulating fault with synthetic alert.")
+        test_alert = Alert(
+            inverter_name="TEST-INVERTER",
+            serial="SIM-0000",
+            message="CLI-triggered test fault",
+            status=7,
+            pac_w=0.0,
+        )
+        notifier.handle_alerts([test_alert])
+
+
+def run_daily_summary(
+    now,
+    reader,
+    summary_service,
+    notifier,
+    snapshot_map,
+    cloud_inverters,
+    se_client,
+    se_skip,
+    app_cfg,
+    log,
+):
+    if snapshot_map:
+        summary_modbus = snapshot_map
+    else:
+        summary_modbus = reader.read_all()
+
+    summary_inventory = cloud_inverters or None
+    if se_skip and app_cfg.solaredge_api.skip_at_night:
+        if se_client.enabled:
+            log.info(
+                "SolarEdge API skip-at-night active, but fetching cloud data for daily summary."
+            )
+            summary_inventory = se_client.fetch_inverters()
+        else:
+            summary_inventory = None
+
+    summary = summary_service.run(
+        now.date(),
+        inventory=summary_inventory,
+        modbus_snapshots=summary_modbus,
+    )
+    if summary:
+        summary_text = summary_service.format_summary(summary)
+        print("\n=== DAILY SUMMARY ===")
+        print(summary_text)
+        notifier.send_daily_summary(
+            summary_text,
+            summary.site_wh_modbus,
+            summary.site_wh_api,
+        )
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -130,50 +190,20 @@ def main():
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:
-            if snapshot_map:
-                summary_modbus = snapshot_map
-            else:
-                summary_modbus = reader.read_all()
-            summary_inventory = cloud_inverters or None
-            if se_skip and app_cfg.solaredge_api.skip_at_night:
-                if se_client.enabled:
-                    log.info(
-                        "SolarEdge API skip-at-night active, but fetching cloud data for daily summary."
-                    )
-                    summary_inventory = se_client.fetch_inverters()
-                else:
-                    summary_inventory = None
-            summary = summary_service.run(
-                now.date(),
-                inventory=summary_inventory,
-                modbus_snapshots=summary_modbus,
+            run_daily_summary(
+                now=now,
+                reader=reader,
+                summary_service=summary_service,
+                notifier=notifier,
+                snapshot_map=snapshot_map,
+                cloud_inverters=cloud_inverters,
+                se_client=se_client,
+                se_skip=se_skip,
+                app_cfg=app_cfg,
+                log=log,
             )
-            if summary:
-                summary_text = summary_service.format_summary(summary)
-                print("\n=== DAILY SUMMARY ===")
-                print(summary_text)
-                notifier.send_daily_summary(
-                    summary_text,
-                    summary.site_wh_modbus,
-                    summary.site_wh_api,
-                )
     elif args.command == "notify-test":
-        mode = args.mode
-
-        if mode in ("healthy", "both"):
-            log.info("[notify-test] Simulating healthy system (no alerts).")
-            notifier.handle_alerts([])
-
-        if mode in ("fault", "both"):
-            log.info("[notify-test] Simulating fault with synthetic alert.")
-            test_alert = Alert(
-                inverter_name="TEST-INVERTER",
-                serial="SIM-0000",
-                message="CLI-triggered test fault",
-                status=7,
-                pac_w=0.0,
-            )
-            notifier.handle_alerts([test_alert])
+        run_notify_test(notifier, log, args.mode)
     else:
         raise ValueError(f"Unsupported command: {args.command}")
 
