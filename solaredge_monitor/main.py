@@ -1,6 +1,7 @@
 # solaredge_monitor/main.py
 
 from datetime import datetime
+from pathlib import Path
 
 from .cli import build_parser
 from .config import Config
@@ -26,7 +27,8 @@ def main():
     log = setup_logging(debug=args.debug, quiet=args.quiet)
 
     # Instantiate services
-    state = AppState()
+    state_path = Path(app_cfg.state.path).expanduser() if app_cfg.state.path else None
+    state = AppState(path=state_path)
     notifier = NotificationManager(app_cfg.pushover, app_cfg.healthchecks, log)
     evaluator = HealthEvaluator(app_cfg.health, log)
     daylight_policy = DaylightPolicy(app_cfg.daylight, log)
@@ -119,7 +121,12 @@ def main():
             optimizer_mismatches=optimizer_mismatches,
         )
 
-        notifier.handle_alerts(alerts)
+        if daylight_info.skip_modbus:
+            log.info(
+                "Modbus polling skipped; suppressing Healthchecks ping until monitoring resumes."
+            )
+        else:
+            notifier.handle_alerts(alerts)
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:
@@ -169,6 +176,8 @@ def main():
             notifier.handle_alerts([test_alert])
     else:
         raise ValueError(f"Unsupported command: {args.command}")
+
+    state.flush()
 
 
 if __name__ == "__main__":

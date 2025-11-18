@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -17,6 +18,8 @@ class AppState:
     def __init__(self, path: Optional[Path] = None):
         default_path = Path.home() / ".solaredge_monitor_state.json"
         self.path = Path(path or default_path)
+        self._log = logging.getLogger("solaredge.state")
+        self._dirty = False
         self.data = self._load()
 
     def _load(self) -> Dict:
@@ -27,22 +30,31 @@ class AppState:
                 obj = json.load(fh)
                 if isinstance(obj, dict):
                     return obj
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log.warning("Failed to load state file %s: %s", self.path, exc)
         return {}
 
-    def save(self) -> None:
+    def _mark_dirty(self) -> None:
+        self._dirty = True
+
+    def flush(self) -> None:
+        if not self._dirty:
+            return
         try:
             self.path.write_text(json.dumps(self.data, indent=2))
-        except Exception:
-            pass
+            self._dirty = False
+        except Exception as exc:
+            self._log.warning("Failed to write state file %s: %s", self.path, exc)
+
+    def save(self) -> None:
+        self.flush()
 
     def get(self, key: str, default=None):
         return self.data.get(key, default)
 
     def set(self, key: str, value) -> None:
         self.data[key] = value
-        self.save()
+        self._mark_dirty()
 
     # Serial mappings -----------------------------------------------------
     def update_inverter_serial(self, name: str, serial: str) -> None:
@@ -50,7 +62,7 @@ class AppState:
             return
         serials = self.data.setdefault("inverter_serials", {})
         serials[name] = serial.upper()
-        self.save()
+        self._mark_dirty()
 
     def get_inverter_serial(self, name: str) -> Optional[str]:
         serials = self.data.get("inverter_serials", {})
@@ -64,7 +76,7 @@ class AppState:
         serial = serial.upper()
         totals = self.data.setdefault("latest_totals", {})
         totals[serial] = {"day": _day_str(day), "total_wh": total_wh}
-        self.save()
+        self._mark_dirty()
 
     def get_latest_total(self, serial: str, day) -> Optional[float]:
         if not serial:
@@ -88,4 +100,10 @@ class AppState:
             return
         totals = self.data.setdefault("summary_totals", {})
         totals[serial.upper()] = {"day": _day_str(day), "total_wh": total_wh}
-        self.save()
+        self._mark_dirty()
+
+    def __del__(self):
+        try:
+            self.flush()
+        except Exception:
+            pass

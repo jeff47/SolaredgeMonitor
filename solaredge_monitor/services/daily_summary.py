@@ -123,6 +123,7 @@ class DailySummaryService:
         )
 
         self.mark_ran(day)
+        self.state.flush()
         return summary
 
     # ------------------------------------------------------------------

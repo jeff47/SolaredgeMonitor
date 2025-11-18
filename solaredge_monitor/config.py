@@ -70,6 +70,11 @@ class SolarEdgeAPIConfig:
 
 
 @dataclass
+class StateConfig:
+    path: str | None = None
+
+
+@dataclass
 class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
@@ -78,6 +83,7 @@ class AppConfig:
     health: HealthConfig
     daylight: DaylightConfig
     solaredge_api: SolarEdgeAPIConfig
+    state: StateConfig
 
 
 class Config:
@@ -196,6 +202,12 @@ class Config:
         )
 
 
+        # --- State ---
+        state_sec = p["state"] if "state" in p else {}
+        state_cfg = StateConfig(
+            path=state_sec.get("path"),
+        )
+
         return AppConfig(
             modbus=modbus,
             pushover=pushover,
@@ -204,4 +216,5 @@ class Config:
             health=health_cfg,
             daylight=daylight_cfg,
             solaredge_api=solaredge_api_cfg,
+            state=state_cfg,
         )
