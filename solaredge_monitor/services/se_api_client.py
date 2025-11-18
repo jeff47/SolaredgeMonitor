@@ -47,6 +47,19 @@ class SolarEdgeAPIClient:
         serial = str(value).strip().upper()
         return serial or None
 
+    def _serial_variants(self, value: Any) -> List[str]:
+        """Return normalized serial plus a hyphen-stripped variant (if present)."""
+        serial = self._normalize_serial(value)
+        if not serial:
+            return []
+
+        variants = [serial]
+        if "-" in serial:
+            base_serial = serial.split("-", 1)[0]
+            if base_serial and base_serial not in variants:
+                variants.append(base_serial)
+        return variants
+
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Optional[Any]:
         if not self.enabled:
             self.log.debug("SolarEdge API disabled; skipping %s", path)
@@ -149,8 +162,8 @@ class SolarEdgeAPIClient:
         inv_list = inventory if inventory is not None else self.fetch_inverters()
         for inv in inv_list:
             if inv.connected_optimizers is not None:
-                serial = self._normalize_serial(inv.serial) or inv.serial
-                counts[serial] = inv.connected_optimizers
+                for serial in self._serial_variants(inv.serial):
+                    counts.setdefault(serial, inv.connected_optimizers)
         return counts
 
     # ------------------------------------------------------------------

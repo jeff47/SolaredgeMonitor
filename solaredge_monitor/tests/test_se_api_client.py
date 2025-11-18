@@ -85,6 +85,24 @@ def test_inventory_parsing_variants():
     assert invs[1].connected_optimizers == 3
 
 
+def test_optimizer_counts_include_serial_base_variant():
+    client = SolarEdgeAPIClient(_cfg(), LOG)
+    cloud = [
+        CloudInverter(
+            serial="ABC123-XY",
+            name="Roof Inverter",
+            status=None,
+            model=None,
+            connected_optimizers=19,
+            raw={},
+        )
+    ]
+
+    counts = client.get_optimizer_counts(cloud)
+    assert counts["ABC123-XY"] == 19
+    assert counts["ABC123"] == 19
+
+
 def test_get_daily_production_parses_value():
     energy_payload = {
         "energy": {
