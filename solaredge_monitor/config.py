@@ -150,6 +150,7 @@ class Config:
         health_cfg = HealthConfig(
             peer_ratio_threshold=float(health_sec.get("peer_ratio_threshold", "0.20")),
             min_production_for_peer_check=float(health_sec.get("min_production_for_peer_check", "50")),
+            low_light_peer_skip_threshold=float(health_sec.get("low_light_peer_skip_threshold", "20.0")),
         )
 
         # --- Daylight ---

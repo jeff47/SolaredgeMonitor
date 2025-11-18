@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import date
-from typing import Iterable, Optional
+from typing import Dict, Iterable, Optional
 
 from solaredge_monitor.config import InverterConfig
 from solaredge_monitor.models.daylight import DaylightInfo
@@ -91,18 +91,22 @@ class DailySummaryService:
 
             prev_day, prev_total = self.state.get_summary_baseline(serial_norm) if serial_norm else (None, None)
             energy = None
+            energy_source = None
             if (
                 current_total is not None
                 and prev_total is not None
                 and prev_day != day_str
             ):
                 delta = current_total - prev_total
-                energy = delta if delta >= 0 else None
+                if delta >= 0:
+                    energy = delta
+                    energy_source = "modbus"
             elif api_energy is not None:
                 energy = api_energy
+                energy_source = "api"
 
             per_inverter.append((name, energy))
-            if energy is not None:
+            if energy is not None and energy_source == "modbus":
                 modbus_total += energy
                 modbus_values_present = True
 

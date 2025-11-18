@@ -36,9 +36,10 @@ def main():
 
     if args.command == "health":
         reader = ModbusReader(app_cfg.modbus, log)
-        now = datetime.now()
+        now = datetime.now(daylight_policy.timezone)
         daylight_info = daylight_policy.get_info(now)
-        se_skip = daylight_info.skip_modbus and app_cfg.solaredge_api.skip_at_night
+        is_night = daylight_info.phase == "NIGHT"
+        se_skip = bool(app_cfg.solaredge_api.skip_at_night and is_night)
 
         cloud_inverters = []
         cloud_by_serial = {}
@@ -126,14 +127,15 @@ def main():
                 summary_modbus = snapshot_map
             else:
                 summary_modbus = reader.read_all()
+            summary_inventory = cloud_inverters or None
             if se_skip and app_cfg.solaredge_api.skip_at_night:
-                log.info(
-                    "Running daily summary despite nightly SolarEdge API skip setting."
-                )
-            summary_inventory = (
-                None if (se_skip and app_cfg.solaredge_api.skip_at_night)
-                else (cloud_inverters or None)
-            )
+                if se_client.enabled:
+                    log.info(
+                        "SolarEdge API skip-at-night active, but fetching cloud data for daily summary."
+                    )
+                    summary_inventory = se_client.fetch_inverters()
+                else:
+                    summary_inventory = None
             summary = summary_service.run(
                 now.date(),
                 inventory=summary_inventory,

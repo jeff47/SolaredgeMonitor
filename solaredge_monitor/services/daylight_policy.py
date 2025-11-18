@@ -55,8 +55,19 @@ class DaylightPolicy:
 
         return sunrise, sunset
 
+    @property
+    def timezone(self) -> ZoneInfo:
+        return self._tz
+
     def get_info(self, now: datetime) -> DaylightInfo:
-        local_now = now.astimezone(self._tz) if now.tzinfo else now.replace(tzinfo=self._tz)
+        if now.tzinfo is None:
+            self.log.warning(
+                "DaylightPolicy received naive datetime; assuming %s timezone",
+                self.cfg.timezone,
+            )
+            local_now = now.replace(tzinfo=self._tz)
+        else:
+            local_now = now.astimezone(self._tz)
         sunrise, sunset = self._sun_times(local_now.date())
 
         sunrise_grace_end = sunrise + timedelta(minutes=self.cfg.sunrise_grace_minutes)
