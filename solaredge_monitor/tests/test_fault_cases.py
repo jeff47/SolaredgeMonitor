@@ -9,6 +9,8 @@ class DummyCfg:
     peer_ratio_threshold = 0.6          # If one inverter <60% of peer → fault
     min_production_for_peer_check = 200 # Skip peer check if both below this
     low_light_peer_skip_threshold = 20   # Peer checks skipped under this PAC
+    low_pac_threshold = 10
+    low_vdc_threshold = 50
 
 
 def _mk_evaluator():

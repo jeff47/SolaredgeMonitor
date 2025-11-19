@@ -36,15 +36,37 @@ def run_notify_test(notifier: NotificationManager, log, mode: str) -> None:
         notifier.handle_alerts([test_alert])
 
 
+def collect_modbus_snapshots(reader, state, now, log):
+    snapshots_raw = reader.read_all()
+    if isinstance(snapshots_raw, dict):
+        snapshot_items = list(snapshots_raw.items())
+        snapshot_map = snapshots_raw
+    else:
+        snapshot_items = [(s.name, s) for s in snapshots_raw]
+        snapshot_map = {name: snap for name, snap in snapshot_items}
+
+    serial_by_name: dict[str, str] = {}
+    for name, snap in snapshot_map.items():
+        if snap is None:
+            continue
+        serial = (snap.serial or name).upper()
+        serial_by_name[name] = serial
+        state.update_inverter_serial(name, serial)
+        if snap.total_wh is not None:
+            state.update_latest_total(serial, now.date(), snap.total_wh)
+
+    return snapshot_map, snapshot_items, serial_by_name
+
+
 def run_daily_summary(
     now,
+    daylight_info,
     reader,
     summary_service,
     notifier,
     snapshot_map,
     cloud_inverters,
     se_client,
-    se_skip,
     app_cfg,
     log,
 ):
@@ -54,7 +76,7 @@ def run_daily_summary(
         summary_modbus = reader.read_all()
 
     summary_inventory = cloud_inverters or None
-    if se_skip and app_cfg.solaredge_api.skip_at_night:
+    if app_cfg.solaredge_api.skip_at_night and daylight_info.skip_cloud:
         if se_client.enabled:
             log.info(
                 "SolarEdge API skip-at-night active, but fetching cloud data for daily summary."
@@ -91,7 +113,12 @@ def main():
     state = AppState(path=state_path)
     notifier = NotificationManager(app_cfg.pushover, app_cfg.healthchecks, log)
     evaluator = HealthEvaluator(app_cfg.health, log)
-    daylight_policy = DaylightPolicy(app_cfg.daylight, log)
+    daylight_policy = DaylightPolicy(
+        app_cfg.daylight,
+        log,
+        skip_modbus_at_night=app_cfg.modbus.skip_modbus_at_night,
+        skip_cloud_at_night=app_cfg.solaredge_api.skip_at_night,
+    )
     se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
     summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log, state=state)
     alert_manager = AlertStateManager(log)
@@ -100,8 +127,6 @@ def main():
         reader = ModbusReader(app_cfg.modbus, log)
         now = datetime.now(daylight_policy.timezone)
         daylight_info = daylight_policy.get_info(now)
-        is_night = daylight_info.phase == "NIGHT"
-        se_skip = bool(app_cfg.solaredge_api.skip_at_night and is_night)
 
         cloud_inverters = []
         cloud_by_serial = {}
@@ -114,27 +139,15 @@ def main():
                 daylight_info.phase,
                 daylight_info.sunrise.astimezone().strftime("%H:%M"),
             )
-            snapshot_items = []
             snapshot_map = {}
+            snapshot_items = []
+            serial_by_name = {}
         else:
-            snapshots_raw = reader.read_all()
-            if isinstance(snapshots_raw, dict):
-                snapshot_items = list(snapshots_raw.items())
-                snapshot_map = snapshots_raw
-            else:
-                snapshot_items = [(s.name, s) for s in snapshots_raw]
-                snapshot_map = {name: snap for name, snap in snapshot_items}
+            snapshot_map, snapshot_items, serial_by_name = collect_modbus_snapshots(
+                reader, state, now, log
+            )
 
-            for name, snap in snapshot_map.items():
-                if snap is None:
-                    continue
-                serial = (snap.serial or name).upper()
-                serial_by_name[name] = serial
-                state.update_inverter_serial(name, serial)
-                if snap.total_wh is not None:
-                    state.update_latest_total(serial, now.date(), snap.total_wh)
-
-        if se_client.enabled and not se_skip:
+        if se_client.enabled and not daylight_info.skip_cloud:
             cloud_inverters = se_client.fetch_inverters()
             cloud_by_serial = {inv.serial: inv for inv in cloud_inverters}
             for inv in cloud_inverters:
@@ -164,7 +177,7 @@ def main():
             inv_cfg.expected_optimizers is not None for inv_cfg in app_cfg.modbus.inverters
         )
 
-        if se_client.enabled and not se_skip and has_optimizer_expectations:
+        if se_client.enabled and not daylight_info.skip_cloud and has_optimizer_expectations:
             optimizer_counts_by_serial = se_client.get_optimizer_counts(cloud_inverters or None)
             optimizer_mismatches = evaluator.update_with_optimizer_counts(
                 health,
@@ -172,7 +185,7 @@ def main():
                 serial_by_name,
                 optimizer_counts_by_serial,
             )
-        elif se_client.enabled and se_skip and has_optimizer_expectations:
+        elif se_client.enabled and daylight_info.skip_cloud and has_optimizer_expectations:
             log.info("SolarEdge API polling skipped at night (configuration).")
 
         alerts = alert_manager.build_alerts(
@@ -186,19 +199,19 @@ def main():
                 "Modbus polling skipped; suppressing Healthchecks ping until monitoring resumes."
             )
         else:
-            notifier.handle_alerts(alerts)
+            notifier.handle_alerts(alerts, health=health)
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:
             run_daily_summary(
                 now=now,
+                daylight_info=daylight_info,
                 reader=reader,
                 summary_service=summary_service,
                 notifier=notifier,
                 snapshot_map=snapshot_map,
                 cloud_inverters=cloud_inverters,
                 se_client=se_client,
-                se_skip=se_skip,
                 app_cfg=app_cfg,
                 log=log,
             )

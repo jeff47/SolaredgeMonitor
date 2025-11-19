@@ -6,10 +6,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
-from typing import Iterable
+from typing import Iterable, Optional
 
 from solaredge_monitor.config import PushoverConfig
 from solaredge_monitor.services.alert_logic import Alert
+from solaredge_monitor.models.system_health import SystemHealth, InverterHealth
 
 
 class PushoverNotifier:
@@ -49,12 +50,60 @@ class PushoverNotifier:
             return False
 
     # ------------------------------------------------------------------
-    def send_alerts(self, alerts: Iterable[Alert]) -> None:
+    def _select_baseline(self, alert: Alert, health: Optional[SystemHealth]) -> Optional[InverterHealth]:
+        if not health:
+            return None
+        if alert.inverter_name == "SYSTEM":
+            return None
+
+        per_inv = health.per_inverter or {}
+        if not per_inv:
+            return None
+
+        candidates = [
+            inv
+            for name, inv in per_inv.items()
+            if name != alert.inverter_name
+            and inv.inverter_ok
+            and inv.reading is not None
+        ]
+        if not candidates:
+            return None
+
+        def pac_value(inv: InverterHealth) -> float:
+            reading = inv.reading
+            if reading and reading.pac_w is not None:
+                return reading.pac_w
+            return -1.0
+
+        return max(candidates, key=pac_value)
+
+    def _format_baseline_line(self, baseline: InverterHealth) -> Optional[str]:
+        reading = baseline.reading
+        if reading is None:
+            return None
+        status = reading.status if reading.status is not None else "unknown"
+        pac = reading.pac_w if reading.pac_w is not None else 0.0
+        return f"Baseline {baseline.name}: status={status}, PAC={pac:.0f} W"
+
+    def _format_alert_message(self, alert: Alert, health: Optional[SystemHealth]) -> str:
+        pac = alert.pac_w if alert.pac_w is not None else 0.0
+        lines = [
+            f"{alert.inverter_name}: status={alert.status}, PAC={pac:.0f} W",
+            f"Reason: {alert.message}",
+        ]
+
+        baseline = self._select_baseline(alert, health)
+        if baseline:
+            baseline_line = self._format_baseline_line(baseline)
+            if baseline_line:
+                lines.append(baseline_line)
+
+        return "\n".join(lines)
+
+    def send_alerts(self, alerts: Iterable[Alert], *, health: Optional[SystemHealth] = None) -> None:
         for alert in alerts:
-            message = (
-                f"{alert.inverter_name}: status={alert.status}, "
-                f"PAC={alert.pac_w or 0:.0f} W — {alert.message}"
-            )
+            message = self._format_alert_message(alert, health)
             self._post("SolarEdge Alert", message)
 
     # ------------------------------------------------------------------

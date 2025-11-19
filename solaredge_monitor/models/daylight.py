@@ -13,4 +13,5 @@ class DaylightInfo:
     production_over_at: datetime
     in_grace_window: bool
     skip_modbus: bool
+    skip_cloud: bool
     production_day_over: bool

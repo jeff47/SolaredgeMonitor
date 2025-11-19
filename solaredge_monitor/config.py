@@ -44,6 +44,8 @@ class HealthConfig:
     peer_ratio_threshold: float
     min_production_for_peer_check: float
     low_light_peer_skip_threshold: float = 20.0
+    low_pac_threshold: float = 10.0
+    low_vdc_threshold: float = 50.0
 
 
 @dataclass
@@ -54,7 +56,6 @@ class DaylightConfig:
     sunrise_grace_minutes: int = 30
     sunset_grace_minutes: int = 45
     summary_delay_minutes: int = 90
-    skip_modbus_at_night: bool = True
     static_sunrise: str | None = "06:30"
     static_sunset: str | None = "20:30"
 
@@ -157,6 +158,8 @@ class Config:
             peer_ratio_threshold=float(health_sec.get("peer_ratio_threshold", "0.20")),
             min_production_for_peer_check=float(health_sec.get("min_production_for_peer_check", "50")),
             low_light_peer_skip_threshold=float(health_sec.get("low_light_peer_skip_threshold", "20.0")),
+            low_pac_threshold=float(health_sec.get("low_pac_threshold", "10.0")),
+            low_vdc_threshold=float(health_sec.get("low_vdc_threshold", "50.0")),
         )
 
         # --- Daylight ---
@@ -178,7 +181,6 @@ class Config:
             sunrise_grace_minutes=int(daylight_sec.get("sunrise_grace_minutes", "30")),
             sunset_grace_minutes=int(daylight_sec.get("sunset_grace_minutes", "45")),
             summary_delay_minutes=int(daylight_sec.get("summary_delay_minutes", "90")),
-            skip_modbus_at_night=skip_modbus,
             static_sunrise=daylight_sec.get("static_sunrise", "06:30"),
             static_sunset=daylight_sec.get("static_sunset", "20:30"),
         )

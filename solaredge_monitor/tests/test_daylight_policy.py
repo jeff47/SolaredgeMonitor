@@ -11,7 +11,7 @@ setup_logging(debug=False)
 LOG = get_logger("daylight-test")
 
 
-def _policy(**overrides):
+def _policy(skip_modbus_at_night=True, skip_cloud_at_night=False, **overrides):
     cfg = DaylightConfig(
         timezone="UTC",
         latitude=None,
@@ -21,11 +21,15 @@ def _policy(**overrides):
         sunrise_grace_minutes=30,
         sunset_grace_minutes=45,
         summary_delay_minutes=60,
-        skip_modbus_at_night=True,
     )
     for key, value in overrides.items():
         setattr(cfg, key, value)
-    return DaylightPolicy(cfg, LOG)
+    return DaylightPolicy(
+        cfg,
+        LOG,
+        skip_modbus_at_night=skip_modbus_at_night,
+        skip_cloud_at_night=skip_cloud_at_night,
+    )
 
 
 def test_nighttime_skips_modbus():

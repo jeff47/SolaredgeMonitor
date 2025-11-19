@@ -70,24 +70,41 @@ class HealthEvaluator:
             )
 
         # ---------------------------------------
-        # Producing but extremely low PAC (<10W)
+        # Producing but extremely low PAC (< configured threshold)
         # ---------------------------------------
-        if status == 4 and reading.pac_w is not None and reading.pac_w < 10:
+        low_pac_threshold = self.cfg.low_pac_threshold
+        if (
+            status == 4
+            and low_pac_threshold is not None
+            and reading.pac_w is not None
+            and reading.pac_w < low_pac_threshold
+        ):
             return InverterHealth(
                 name=name,
                 inverter_ok=False,
-                reason=f"Producing but PAC={reading.pac_w:.1f} W",
+                reason=(
+                    f"Producing but PAC={reading.pac_w:.1f} W "
+                    f"(<{low_pac_threshold:.1f} W threshold)"
+                ),
                 reading=reading,
             )
 
         # ---------------------------------------
-        # Low Vdc (<50V)
+        # Low Vdc (< configured threshold)
         # ---------------------------------------
-        if reading.vdc_v is not None and reading.vdc_v < 50:
+        low_vdc_threshold = self.cfg.low_vdc_threshold
+        if (
+            low_vdc_threshold is not None
+            and reading.vdc_v is not None
+            and reading.vdc_v < low_vdc_threshold
+        ):
             return InverterHealth(
                 name=name,
                 inverter_ok=False,
-                reason=f"Low DC voltage Vdc={reading.vdc_v:.1f} V",
+                reason=(
+                    f"Low DC voltage Vdc={reading.vdc_v:.1f} V "
+                    f"(<{low_vdc_threshold:.1f} V threshold)"
+                ),
                 reading=reading,
             )
 

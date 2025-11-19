@@ -17,11 +17,20 @@ from solaredge_monitor.models.daylight import DaylightInfo
 class DaylightPolicy:
     """Encapsulates sunrise/sunset logic with configurable grace windows."""
 
-    def __init__(self, cfg: DaylightConfig, log):
+    def __init__(
+        self,
+        cfg: DaylightConfig,
+        log,
+        *,
+        skip_modbus_at_night: bool = True,
+        skip_cloud_at_night: bool = False,
+    ):
         self.cfg = cfg
         self.log = log
         self._tz = ZoneInfo(cfg.timezone)
         self._observer = None
+        self._skip_modbus_at_night = skip_modbus_at_night
+        self._skip_cloud_at_night = skip_cloud_at_night
 
         if Observer and cfg.latitude is not None and cfg.longitude is not None:
             self._observer = Observer(latitude=cfg.latitude, longitude=cfg.longitude)
@@ -90,7 +99,8 @@ class DaylightPolicy:
 
         in_grace = phase in ("SUNRISE_GRACE", "SUNSET_GRACE")
         is_daylight = phase in ("SUNRISE_GRACE", "DAY", "SUNSET_GRACE")
-        skip_modbus = phase == "NIGHT" and self.cfg.skip_modbus_at_night
+        skip_modbus = phase == "NIGHT" and self._skip_modbus_at_night
+        skip_cloud = phase == "NIGHT" and self._skip_cloud_at_night
         production_day_over = local_now >= production_over_at
 
         self.log.debug(
@@ -110,5 +120,6 @@ class DaylightPolicy:
             production_over_at=production_over_at,
             in_grace_window=in_grace,
             skip_modbus=skip_modbus,
+            skip_cloud=skip_cloud,
             production_day_over=production_day_over,
         )

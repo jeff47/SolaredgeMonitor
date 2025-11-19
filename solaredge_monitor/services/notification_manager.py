@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 from solaredge_monitor.config import HealthchecksConfig, PushoverConfig
 from solaredge_monitor.services.alert_logic import Alert
 from solaredge_monitor.services.notifiers.healthchecks import HealthchecksNotifier
 from solaredge_monitor.services.notifiers.pushover import PushoverNotifier
+from solaredge_monitor.models.system_health import SystemHealth
 
 
 class NotificationManager:
@@ -19,7 +20,7 @@ class NotificationManager:
         self.healthchecks = HealthchecksNotifier(hc_cfg, log)
 
     # ------------------------------------------------------------------
-    def handle_alerts(self, alerts: Iterable[Alert]) -> None:
+    def handle_alerts(self, alerts: Iterable[Alert], *, health: Optional[SystemHealth] = None) -> None:
         """Send notifications based on the current alert list."""
 
         alerts_list: List[Alert] = list(alerts)
@@ -30,7 +31,7 @@ class NotificationManager:
             return
 
         self.log.warning("%d alerts detected; notifying endpoints.", len(alerts_list))
-        self.pushover.send_alerts(alerts_list)
+        self.pushover.send_alerts(alerts_list, health=health)
 
         summary = ", ".join(f"{a.inverter_name}:{a.status}" for a in alerts_list)
         self.healthchecks.ping_failure(summary or "alerts present")
