@@ -1,5 +1,5 @@
 # solaredge_monitor/config.py
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import configparser
 
@@ -76,6 +76,21 @@ class StateConfig:
 
 
 @dataclass
+class SimulationConfig:
+    enabled: bool = False
+    scenario: str | None = None
+    simulated_time: str | None = None
+    settings: dict[str, str] = field(default_factory=dict)
+    scenarios: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    def as_mapping(self) -> dict[str, dict[str, str] | str]:
+        root: dict[str, dict[str, str] | str] = dict(self.settings)
+        for name, values in self.scenarios.items():
+            root[name] = dict(values)
+        return root
+
+
+@dataclass
 class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
@@ -85,6 +100,7 @@ class AppConfig:
     daylight: DaylightConfig
     solaredge_api: SolarEdgeAPIConfig
     state: StateConfig
+    simulation: SimulationConfig
 
 
 class Config:
@@ -242,6 +258,43 @@ class Config:
             state_kwargs["path"] = p["state"]["path"]
         state_cfg = StateConfig(**state_kwargs)
 
+        # --- Simulation ---
+        sim_enabled = False
+        sim_scenario: str | None = None
+        sim_settings: dict[str, str] = {}
+        sim_time: str | None = None
+        if "simulation" in p:
+            sim_sec = p["simulation"]
+            if "enabled" in sim_sec:
+                sim_enabled = _as_bool(sim_sec["enabled"])
+            if "scenario" in sim_sec:
+                sim_scenario_raw = sim_sec["scenario"].strip()
+                sim_scenario = sim_scenario_raw or None
+            if "simulated_time" in sim_sec:
+                sim_time_raw = sim_sec["simulated_time"].strip()
+                sim_time = sim_time_raw or None
+            for key, value in sim_sec.items():
+                if key in {"enabled", "scenario", "simulated_time"}:
+                    continue
+                sim_settings[key] = value
+
+        sim_scenarios: dict[str, dict[str, str]] = {}
+        for section in p.sections():
+            if not section.startswith("simulation:"):
+                continue
+            scenario_name = section.split(":", 1)[1].strip()
+            if not scenario_name:
+                continue
+            sim_scenarios[scenario_name] = dict(p[section])
+
+        simulation_cfg = SimulationConfig(
+            enabled=sim_enabled,
+            scenario=sim_scenario,
+            simulated_time=sim_time,
+            settings=sim_settings,
+            scenarios=sim_scenarios,
+        )
+
         return AppConfig(
             modbus=modbus,
             pushover=pushover,
@@ -251,4 +304,5 @@ class Config:
             daylight=daylight_cfg,
             solaredge_api=solaredge_api_cfg,
             state=state_cfg,
+            simulation=simulation_cfg,
         )

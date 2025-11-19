@@ -1,6 +1,7 @@
 # solaredge_monitor/main.py
 
 from datetime import datetime
+import logging
 from pathlib import Path
 
 from .cli import build_parser
@@ -17,6 +18,21 @@ from .services.output_formatter import emit_json, emit_human
 from .services.alert_state import AlertStateManager
 from .services.app_state import AppState
 from .services.alert_logic import Alert
+from .services.simulation_reader import SimulationReader
+from .services.simulation_api_client import SimulationAPIClient
+
+
+def _parse_simulated_time(raw: str | None, tz, log):
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        log.warning("Invalid simulated_time '%s'; using current time instead.", raw)
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=tz)
+    return dt.astimezone(tz)
 
 
 def run_notify_test(notifier: NotificationManager, log, mode: str) -> None:
@@ -107,10 +123,20 @@ def main():
 
     app_cfg = Config.load(args.config)
     log = setup_logging(debug=args.debug, quiet=args.quiet)
+    if args.debug:
+        logging.getLogger("pymodbus").setLevel(logging.INFO)
+
+    # Determine simulation mode
+    sim_cfg = app_cfg.simulation
+    sim_cli_requested = args.command == "simulate"
+    cli_scenario = getattr(args, "scenario", None)
+    sim_scenario = cli_scenario or sim_cfg.scenario
+    use_simulation = sim_cli_requested or sim_cfg.enabled
+    sim_root = sim_cfg.as_mapping() if use_simulation else None
 
     # Instantiate services
     state_path = Path(app_cfg.state.path).expanduser() if app_cfg.state.path else None
-    state = AppState(path=state_path)
+    state = AppState(path=state_path, persist=not use_simulation)
     notifier = NotificationManager(app_cfg.pushover, app_cfg.healthchecks, log)
     evaluator = HealthEvaluator(app_cfg.health, log)
     daylight_policy = DaylightPolicy(
@@ -119,13 +145,33 @@ def main():
         skip_modbus_at_night=app_cfg.modbus.skip_modbus_at_night,
         skip_cloud_at_night=app_cfg.solaredge_api.skip_at_night,
     )
-    se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
+    sim_time_override = None
+    if use_simulation:
+        sim_time_override = _parse_simulated_time(
+            sim_cfg.simulated_time,
+            daylight_policy.timezone,
+            log,
+        )
+
+    if use_simulation:
+        se_client = SimulationAPIClient(
+            sim_scenario,
+            sim_root,
+            log,
+            enabled=app_cfg.solaredge_api.enabled,
+        )
+    else:
+        se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
+
     summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log, state=state)
     alert_manager = AlertStateManager(log)
 
-    if args.command == "health":
-        reader = ModbusReader(app_cfg.modbus, log)
-        now = datetime.now(daylight_policy.timezone)
+    if args.command in {"health", "simulate"}:
+        if use_simulation:
+            reader = SimulationReader(sim_scenario, sim_root or {}, log)
+        else:
+            reader = ModbusReader(app_cfg.modbus, log)
+        now = sim_time_override or datetime.now(daylight_policy.timezone)
         daylight_info = daylight_policy.get_info(now)
 
         cloud_inverters = []
@@ -179,6 +225,10 @@ def main():
 
         if se_client.enabled and not daylight_info.skip_cloud and has_optimizer_expectations:
             optimizer_counts_by_serial = se_client.get_optimizer_counts(cloud_inverters or None)
+            log.debug(
+                "Optimizer counts fetched: %s",
+                {k: optimizer_counts_by_serial[k] for k in sorted(optimizer_counts_by_serial)},
+            )
             optimizer_mismatches = evaluator.update_with_optimizer_counts(
                 health,
                 app_cfg.modbus.inverters,
@@ -193,6 +243,17 @@ def main():
             health=health,
             optimizer_mismatches=optimizer_mismatches,
         )
+
+        if log.isEnabledFor(logging.DEBUG):
+            for alert in alerts:
+                log.debug(
+                    "Alert [%s] serial=%s status=%s pac=%s reason=%s",
+                    alert.inverter_name,
+                    alert.serial,
+                    alert.status,
+                    alert.pac_w,
+                    alert.message,
+                )
 
         if daylight_info.skip_modbus:
             log.info(

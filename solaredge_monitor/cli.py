@@ -36,6 +36,16 @@ def build_parser():
     # One-shot health check
     sub.add_parser("health", help="Run a one-shot health check")
 
+    # Simulation-driven health check
+    cmd_sim = sub.add_parser(
+        "simulate",
+        help="Run a one-shot health check using simulated inputs",
+    )
+    cmd_sim.add_argument(
+        "--scenario",
+        help="Override [simulation] scenario name",
+    )
+
     # Notification test helper
     cmd_notify = sub.add_parser(
         "notify-test",

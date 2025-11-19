@@ -11,8 +11,8 @@ class SimulationReader:
 
     def __init__(self, fault_type, cfg, log):
         self.fault = fault_type
-        self.cfg_root = cfg
-        self.scenario_cfg = cfg.get(fault_type, {})
+        self.cfg_root = cfg or {}
+        self.scenario_cfg = self.cfg_root.get(fault_type, {}) if fault_type else {}
         self.log = log
 
     # --------------------------------------------------------------
@@ -43,18 +43,26 @@ class SimulationReader:
             return self.parse_kv_list(self.cfg_root[key])
         return {}
 
+    def _get_list(self, key):
+        if key in self.scenario_cfg:
+            return self.parse_list(self.scenario_cfg[key])
+        if key in self.cfg_root:
+            return self.parse_list(self.cfg_root[key])
+        return []
+
     # --------------------------------------------------------------
     # Main: produce simulated Modbus snapshots
     # --------------------------------------------------------------
     def read_all(self):
         now = datetime.now()
 
-        inv_ids = self.parse_list(self.cfg_root.get("inverters", ""))
+        inv_ids = self._get_list("inverters")
 
         status_map = self._get_map("inverter_status")
         pac_map    = self._get_map("inverter_pac_w")
         vdc_map    = self._get_map("inverter_vdc")
         idc_map    = self._get_map("inverter_idc")
+        total_map  = self._get_map("inverter_total_wh")
 
         snapshots = []
 
@@ -63,6 +71,7 @@ class SimulationReader:
             pac    = pac_map.get(inv, 0.0)
             vdc    = vdc_map.get(inv, 0.0)
             idc    = idc_map.get(inv, 0.0)
+            total  = total_map.get(inv)
 
             self.log.debug(
                 f"[SIM-MODBUS] {inv}: status={status}, pac={pac}, "
@@ -79,7 +88,7 @@ class SimulationReader:
                     pac_w=float(pac),
                     vdc_v=float(vdc),
                     idc_a=float(idc),
-                    total_wh=None,
+                    total_wh=float(total) if total is not None else None,
                     error=None,
                     timestamp=now,
                 )

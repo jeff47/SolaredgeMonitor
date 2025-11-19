@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 
 def _day_str(day) -> str:
@@ -17,15 +17,20 @@ def _day_str(day) -> str:
 class AppState:
     """Shared persistent state for serial mappings and daily energy baselines."""
 
-    def __init__(self, path: Optional[Path] = None):
+    def __init__(self, path: Optional[Union[Path, str]] = None, *, persist: bool = True):
         default_path = Path.home() / ".solaredge_monitor_state.json"
-        self.path = Path(path or default_path)
+        self._persist = persist
+        if self._persist:
+            resolved = Path(path) if path else default_path
+            self.path: Optional[Path] = resolved
+        else:
+            self.path = None
         self._log = logging.getLogger("solaredge.state")
         self._dirty = False
         self.data = self._load()
 
     def _load(self) -> Dict:
-        if not self.path.exists():
+        if not self._persist or self.path is None or not self.path.exists():
             return {}
         try:
             with self.path.open() as fh:
@@ -40,7 +45,7 @@ class AppState:
         self._dirty = True
 
     def flush(self) -> None:
-        if not self._dirty:
+        if not self._persist or self.path is None or not self._dirty:
             return
 
         tmp_path = None

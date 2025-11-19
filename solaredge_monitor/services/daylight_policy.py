@@ -104,7 +104,8 @@ class DaylightPolicy:
         production_day_over = local_now >= production_over_at
 
         self.log.debug(
-            "Daylight policy: phase=%s, sunrise=%s, sunset=%s",
+            "Daylight policy: now=%s phase=%s, sunrise=%s, sunset=%s",
+            local_now,
             phase,
             sunrise,
             sunset,
