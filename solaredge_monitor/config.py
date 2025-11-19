@@ -1,5 +1,5 @@
 # solaredge_monitor/config.py
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 import configparser
 
@@ -8,41 +8,41 @@ import configparser
 class InverterConfig:
     name: str
     host: str
-    port: int
-    unit: int
+    port: int = 1502
+    unit: int = 1
     expected_optimizers: int | None = None
 
 
 @dataclass
 class ModbusConfig:
     inverters: list[InverterConfig]
-    retries: int
-    timeout: float
+    retries: int = 3
+    timeout: float = 3.0
     skip_modbus_at_night: bool = True
 
 
 @dataclass
 class PushoverConfig:
-    token: str | None
-    user: str | None
-    enabled: bool
+    token: str | None = None
+    user: str | None = None
+    enabled: bool = False
 
 
 @dataclass
 class HealthchecksConfig:
-    ping_url: str | None
-    enabled: bool
+    ping_url: str | None = None
+    enabled: bool = False
 
 
 @dataclass
 class AlertsConfig:
     # Simple: any alert → send pushover + mark HC fail
-    enabled: bool
+    enabled: bool = True
 
 @dataclass
 class HealthConfig:
-    peer_ratio_threshold: float
-    min_production_for_peer_check: float
+    peer_ratio_threshold: float = 0.20
+    min_production_for_peer_check: float = 50.0
     low_light_peer_skip_threshold: float = 20.0
     low_pac_threshold: float = 10.0
     low_vdc_threshold: float = 50.0
@@ -101,72 +101,10 @@ class Config:
 
         p = cfg.parser
 
-        # --- Modbus ---
-        inverters: list[InverterConfig] = []
-        if "modbus" not in p:
-            raise ValueError("[modbus] section missing from config")
+        def _as_bool(value: str) -> bool:
+            return value.strip().lower() == "true"
 
-        inv_names = p["modbus"].get("inverters", "")
-        for name in [x.strip() for x in inv_names.split(",") if x.strip()]:
-            sec = f"inverter:{name}"
-            if sec not in p:
-                raise ValueError(f"Missing section [{sec}] for inverter '{name}'")
-            inv_sec = p[sec]
-            inverters.append(
-                InverterConfig(
-                    name=name,
-                    host=inv_sec["host"],
-                    port=int(inv_sec.get("port", "1502")),
-                    unit=int(inv_sec.get("unit", "1")),
-                    expected_optimizers=(int(inv_sec["expected_optimizers"]) if "expected_optimizers" in inv_sec else None),
-                )
-            )
-
-        skip_modbus = p["modbus"].get("skip_modbus_at_night", "true").lower() == "true"
-
-        modbus = ModbusConfig(
-            inverters=inverters,
-            retries=int(p["modbus"].get("retries", "3")),
-            timeout=float(p["modbus"].get("timeout", "3.0")),
-            skip_modbus_at_night=skip_modbus,
-        )
-
-        # --- Pushover ---
-        pushover_sec = p["pushover"] if "pushover" in p else {}
-        pushover = PushoverConfig(
-            token=pushover_sec.get("token"),
-            user=pushover_sec.get("user"),
-            enabled=pushover_sec.get("enabled", "false").lower() == "true",
-        )
-
-        # --- Healthchecks ---
-        hc_sec = p["healthchecks"] if "healthchecks" in p else {}
-        healthchecks = HealthchecksConfig(
-            ping_url=hc_sec.get("ping_url"),
-            enabled=hc_sec.get("enabled", "false").lower() == "true",
-        )
-
-        # --- Alerts ---
-        alerts_sec = p["alerts"] if "alerts" in p else {}
-        alerts = AlertsConfig(
-            enabled=alerts_sec.get("enabled", "true").lower() == "true",
-        )
-
-        # --- Health ---
-        health_sec = p["health"] if "health" in p else {}
-        health_cfg = HealthConfig(
-            peer_ratio_threshold=float(health_sec.get("peer_ratio_threshold", "0.20")),
-            min_production_for_peer_check=float(health_sec.get("min_production_for_peer_check", "50")),
-            low_light_peer_skip_threshold=float(health_sec.get("low_light_peer_skip_threshold", "20.0")),
-            low_pac_threshold=float(health_sec.get("low_pac_threshold", "10.0")),
-            low_vdc_threshold=float(health_sec.get("low_vdc_threshold", "50.0")),
-        )
-
-        # --- Daylight ---
-        daylight_sec = p["daylight"] if "daylight" in p else {}
-
-        def _maybe_float(key: str) -> float | None:
-            raw = daylight_sec.get(key)
+        def _maybe_float(raw: str | None) -> float | None:
             if raw is None:
                 return None
             raw = raw.strip()
@@ -174,41 +112,135 @@ class Config:
                 return None
             return float(raw)
 
-        daylight_cfg = DaylightConfig(
-            timezone=daylight_sec.get("timezone", "UTC"),
-            latitude=_maybe_float("latitude"),
-            longitude=_maybe_float("longitude"),
-            sunrise_grace_minutes=int(daylight_sec.get("sunrise_grace_minutes", "30")),
-            sunset_grace_minutes=int(daylight_sec.get("sunset_grace_minutes", "45")),
-            summary_delay_minutes=int(daylight_sec.get("summary_delay_minutes", "90")),
-            static_sunrise=daylight_sec.get("static_sunrise", "06:30"),
-            static_sunset=daylight_sec.get("static_sunset", "20:30"),
+        # --- Modbus ---
+        inverters: list[InverterConfig] = []
+        if "modbus" not in p:
+            raise ValueError("[modbus] section missing from config")
+
+        modbus_sec = p["modbus"]
+        inv_names = modbus_sec.get("inverters", "")
+        for name in [x.strip() for x in inv_names.split(",") if x.strip()]:
+            sec = f"inverter:{name}"
+            if sec not in p:
+                raise ValueError(f"Missing section [{sec}] for inverter '{name}'")
+            inv_sec = p[sec]
+            inv_kwargs = {
+                "name": name,
+                "host": inv_sec["host"],
+            }
+            if "port" in inv_sec:
+                inv_kwargs["port"] = int(inv_sec["port"])
+            if "unit" in inv_sec:
+                inv_kwargs["unit"] = int(inv_sec["unit"])
+            if "expected_optimizers" in inv_sec:
+                inv_kwargs["expected_optimizers"] = int(inv_sec["expected_optimizers"])
+            inverters.append(InverterConfig(**inv_kwargs))
+
+        modbus_kwargs = {}
+        if "retries" in modbus_sec:
+            modbus_kwargs["retries"] = int(modbus_sec["retries"])
+        if "timeout" in modbus_sec:
+            modbus_kwargs["timeout"] = float(modbus_sec["timeout"])
+        if "skip_modbus_at_night" in modbus_sec:
+            modbus_kwargs["skip_modbus_at_night"] = _as_bool(modbus_sec["skip_modbus_at_night"])
+
+        modbus = ModbusConfig(
+            inverters=inverters,
+            **modbus_kwargs,
         )
+
+        # --- Pushover ---
+        pushover_kwargs = {}
+        if "pushover" in p:
+            pushover_sec = p["pushover"]
+            if "token" in pushover_sec:
+                pushover_kwargs["token"] = pushover_sec["token"]
+            if "user" in pushover_sec:
+                pushover_kwargs["user"] = pushover_sec["user"]
+            if "enabled" in pushover_sec:
+                pushover_kwargs["enabled"] = _as_bool(pushover_sec["enabled"])
+        pushover = PushoverConfig(**pushover_kwargs)
+
+        # --- Healthchecks ---
+        healthchecks_kwargs = {}
+        if "healthchecks" in p:
+            hc_sec = p["healthchecks"]
+            if "ping_url" in hc_sec:
+                healthchecks_kwargs["ping_url"] = hc_sec["ping_url"]
+            if "enabled" in hc_sec:
+                healthchecks_kwargs["enabled"] = _as_bool(hc_sec["enabled"])
+        healthchecks = HealthchecksConfig(**healthchecks_kwargs)
+
+        # --- Alerts ---
+        alerts_kwargs = {}
+        if "alerts" in p and "enabled" in p["alerts"]:
+            alerts_kwargs["enabled"] = _as_bool(p["alerts"]["enabled"])
+        alerts = AlertsConfig(**alerts_kwargs)
+
+        # --- Health ---
+        health_kwargs = {}
+        if "health" in p:
+            health_sec = p["health"]
+            if "peer_ratio_threshold" in health_sec:
+                health_kwargs["peer_ratio_threshold"] = float(health_sec["peer_ratio_threshold"])
+            if "min_production_for_peer_check" in health_sec:
+                health_kwargs["min_production_for_peer_check"] = float(health_sec["min_production_for_peer_check"])
+            if "low_light_peer_skip_threshold" in health_sec:
+                health_kwargs["low_light_peer_skip_threshold"] = float(health_sec["low_light_peer_skip_threshold"])
+            if "low_pac_threshold" in health_sec:
+                health_kwargs["low_pac_threshold"] = float(health_sec["low_pac_threshold"])
+            if "low_vdc_threshold" in health_sec:
+                health_kwargs["low_vdc_threshold"] = float(health_sec["low_vdc_threshold"])
+        health_cfg = HealthConfig(**health_kwargs)
+
+        # --- Daylight ---
+        daylight_kwargs = {}
+        if "daylight" in p:
+            daylight_sec = p["daylight"]
+            if "timezone" in daylight_sec:
+                daylight_kwargs["timezone"] = daylight_sec["timezone"]
+            if (latitude := _maybe_float(daylight_sec.get("latitude"))) is not None:
+                daylight_kwargs["latitude"] = latitude
+            if (longitude := _maybe_float(daylight_sec.get("longitude"))) is not None:
+                daylight_kwargs["longitude"] = longitude
+            if "sunrise_grace_minutes" in daylight_sec:
+                daylight_kwargs["sunrise_grace_minutes"] = int(daylight_sec["sunrise_grace_minutes"])
+            if "sunset_grace_minutes" in daylight_sec:
+                daylight_kwargs["sunset_grace_minutes"] = int(daylight_sec["sunset_grace_minutes"])
+            if "summary_delay_minutes" in daylight_sec:
+                daylight_kwargs["summary_delay_minutes"] = int(daylight_sec["summary_delay_minutes"])
+            if "static_sunrise" in daylight_sec:
+                daylight_kwargs["static_sunrise"] = daylight_sec["static_sunrise"]
+            if "static_sunset" in daylight_sec:
+                daylight_kwargs["static_sunset"] = daylight_sec["static_sunset"]
+        daylight_cfg = DaylightConfig(**daylight_kwargs)
 
         # --- SolarEdge API ---
-        se_api_sec = p["solaredge_api"] if "solaredge_api" in p else {}
-
-        solaredge_api_cfg = SolarEdgeAPIConfig(
-            enabled=se_api_sec.get("enabled", "false").lower() == "true",
-            api_key=(
-                se_api_sec.get("api_key")
-                or se_api_sec.get("solaredge_api_key")
-            ),
-            site_id=(
-                se_api_sec.get("site_id")
-                or se_api_sec.get("solaredge_site_id")
-            ),
-            base_url=se_api_sec.get("base_url", "https://monitoringapi.solaredge.com"),
-            timeout=float(se_api_sec.get("timeout", "20")),
-            skip_at_night=se_api_sec.get("skip_se_api_at_night", "false").lower() == "true",
-        )
+        solaredge_api_kwargs = {}
+        if "solaredge_api" in p:
+            se_api_sec = p["solaredge_api"]
+            if "enabled" in se_api_sec:
+                solaredge_api_kwargs["enabled"] = _as_bool(se_api_sec["enabled"])
+            api_key = se_api_sec.get("api_key") or se_api_sec.get("solaredge_api_key")
+            if api_key is not None:
+                solaredge_api_kwargs["api_key"] = api_key
+            site_id = se_api_sec.get("site_id") or se_api_sec.get("solaredge_site_id")
+            if site_id is not None:
+                solaredge_api_kwargs["site_id"] = site_id
+            if "base_url" in se_api_sec:
+                solaredge_api_kwargs["base_url"] = se_api_sec["base_url"]
+            if "timeout" in se_api_sec:
+                solaredge_api_kwargs["timeout"] = float(se_api_sec["timeout"])
+            if "skip_se_api_at_night" in se_api_sec:
+                solaredge_api_kwargs["skip_at_night"] = _as_bool(se_api_sec["skip_se_api_at_night"])
+        solaredge_api_cfg = SolarEdgeAPIConfig(**solaredge_api_kwargs)
 
 
         # --- State ---
-        state_sec = p["state"] if "state" in p else {}
-        state_cfg = StateConfig(
-            path=state_sec.get("path"),
-        )
+        state_kwargs = {}
+        if "state" in p and "path" in p["state"]:
+            state_kwargs["path"] = p["state"]["path"]
+        state_cfg = StateConfig(**state_kwargs)
 
         return AppConfig(
             modbus=modbus,
