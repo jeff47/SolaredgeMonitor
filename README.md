@@ -1,6 +1,6 @@
 # SolarEdge Monitor
 
-This project polls SolarEdge inverters over Modbus, combines the readings with SolarEdge cloud data, evaluates system health, and pushes notifications via Pushover/Healthchecks. The CLI also supports simulated runs for testing and a SQLite-backed state/retention layer.
+This project polls SolarEdge inverters over Modbus, combines the readings with SolarEdge cloud data, evaluates system health, and pushes notifications via Pushover/Healthchecks. The CLI also supports simulated runs for testing and a SQLite-backed state/retention layer.  This can be useful to get quick notification if an inverter or optimizer has a fault.
 
 ## Features
 
@@ -35,6 +35,3 @@ Run from the repo root:
 
 Use `--debug` for verbose logs, `--json` to print Modbus snapshots as JSON, and `--quiet` to suppress stdout output.
 
-## Testing
-
-Pytest covers daylight logic, daily summaries, simulated readers/APIs, the new SQLite `AppState`, and retention parsing/maintenance. Run `pytest` locally (the sandbox lacks a writable `/tmp`, so tests can’t run here).
