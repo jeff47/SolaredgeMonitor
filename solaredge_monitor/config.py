@@ -35,11 +35,6 @@ class HealthchecksConfig:
 
 
 @dataclass
-class AlertsConfig:
-    # Simple: any alert → send pushover + mark HC fail
-    enabled: bool = True
-
-@dataclass
 class HealthConfig:
     peer_ratio_threshold: float = 0.20
     min_production_for_peer_check: float = 50.0
@@ -101,7 +96,6 @@ class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
     healthchecks: HealthchecksConfig
-    alerts: AlertsConfig
     health: HealthConfig
     daylight: DaylightConfig
     solaredge_api: SolarEdgeAPIConfig
@@ -193,12 +187,6 @@ class Config:
             if "enabled" in hc_sec:
                 healthchecks_kwargs["enabled"] = _as_bool(hc_sec["enabled"])
         healthchecks = HealthchecksConfig(**healthchecks_kwargs)
-
-        # --- Alerts ---
-        alerts_kwargs = {}
-        if "alerts" in p and "enabled" in p["alerts"]:
-            alerts_kwargs["enabled"] = _as_bool(p["alerts"]["enabled"])
-        alerts = AlertsConfig(**alerts_kwargs)
 
         # --- Health ---
         health_kwargs = {}
@@ -315,7 +303,6 @@ class Config:
             modbus=modbus,
             pushover=pushover,
             healthchecks=healthchecks,
-            alerts=alerts,
             health=health_cfg,
             daylight=daylight_cfg,
             solaredge_api=solaredge_api_cfg,
