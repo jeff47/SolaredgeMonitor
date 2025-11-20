@@ -1,0 +1,84 @@
+# Example configuration for SolarEdge Monitor
+# Copy to solaredge_monitor.conf and customize values.
+
+[daylight]
+# Location/timezone for sunrise/sunset calculations
+latitude = 39.0000
+longitude = -77.0000
+timezone = America/New_York
+# Minutes before/after sunrise/sunset to treat readings with grace
+sunrise_grace_minutes = 30
+sunset_grace_minutes = 30
+summary_delay_minutes = 45
+# Static sunrise/sunset if Astral/coordinates unavailable
+static_sunrise = 06:30
+static_sunset = 20:30
+
+[modbus]
+# Comma-separated list of inverter names configured below
+inverters = SE10000H, SE7600H
+# Connection retries/timeouts in seconds
+retries = 3
+timeout = 3.0
+skip_modbus_at_night = true
+
+[inverter:SE10000H]
+# Modbus TCP host/port/unit ID and optional optimizer expectation
+host = 192.168.0.10
+port = 1502
+unit = 1
+expected_optimizers = 26
+
+[inverter:SE7600H]
+host = 192.168.0.11
+port = 1502
+unit = 1
+expected_optimizers = 19
+
+[pushover]
+# Set enabled/token/user to send alerts via Pushover
+enabled = false
+token =
+user =
+
+[healthchecks]
+# Enable + ping URL to report success/failure via Healthchecks.io
+enabled = false
+ping_url =
+
+[health]
+# Thresholds for peer comparisons and low PAC/Vdc detection
+peer_ratio_threshold = 0.20
+min_production_for_peer_check = 50
+low_light_peer_skip_threshold = 20
+low_pac_threshold = 10
+low_vdc_threshold = 50
+
+[solaredge_api]
+# Enable and provide API credentials to fetch optimizer counts/site data
+enabled = false
+skip_se_api_at_night = true
+solaredge_api_key =
+solaredge_site_id =
+
+[state]
+# Path to SQLite database storing snapshots and summaries
+path = ~/.solaredge_monitor_state.db
+
+[retention]
+# How long to keep inverter snapshots/site summaries; prune via maintain-db
+snapshot_days = 30
+summary_days = 90
+vacuum_after_prune = true
+
+[simulation]
+# Defaults for the simulator; override per scenario with [simulation:name]
+inverters = SE10000H, SE7600H
+simulated_time = 2024-06-01T12:00:00-04:00
+inverter_status = SE10000H:4, SE7600H:4
+inverter_pac_w = SE10000H:800, SE7600H:600
+inverter_vdc = SE10000H:400, SE7600H:380
+inverter_idc = SE10000H:2.0, SE7600H:1.5
+inverter_total_wh = SE10000H:120000, SE7600H:118000
+inverter_daily_wh = SE10000H:3000, SE7600H:2500
+inverter_optimizers = SE10000H:26, SE7600H:19
