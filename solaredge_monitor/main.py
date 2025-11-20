@@ -3,6 +3,7 @@
 from datetime import datetime
 import logging
 from pathlib import Path
+import json
 
 from .cli import build_parser
 from .config import Config
@@ -21,6 +22,55 @@ from .services.alert_logic import Alert
 from .services.simulation_reader import SimulationReader
 from .services.simulation_api_client import SimulationAPIClient
 from .services import state_maintenance
+from .services.weather_client import WeatherClient
+
+
+def _log_weather_jsonl(path: str, run_ts, weather_estimate, snapshot_map, log) -> None:
+    """Temporary JSONL logger for model tuning; safe to remove when no longer needed."""
+    if not path or weather_estimate is None:
+        return
+    try:
+        target = Path(path).expanduser()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        pac_map = {}
+        if snapshot_map:
+            for name, snap in snapshot_map.items():
+                if snap and snap.pac_w is not None:
+                    pac_map[name] = snap.pac_w
+
+        snap = weather_estimate.snapshot
+        with target.open("a", encoding="utf-8") as fh:
+            for name, inv in weather_estimate.per_inverter.items():
+                row = {
+                    "run_ts": run_ts.isoformat(),
+                    "inverter": name,
+                    "pac_w": pac_map.get(name),
+                    "expected_ac_kw": inv.expected_ac_kw,
+                    "expected_dc_kw": inv.expected_dc_kw,
+                    "poa_wm2": inv.poa_wm2,
+                    "cos_incidence": inv.cos_incidence,
+                    "ghi_wm2": snap.ghi_wm2,
+                    "dni_wm2": snap.dni_wm2,
+                    "diffuse_wm2": snap.diffuse_wm2,
+                    "cloud_cover_pct": snap.cloud_cover_pct,
+                    "temp_c": snap.temp_c,
+                    "sun_azimuth_deg": snap.sun_azimuth_deg,
+                    "sun_elevation_deg": snap.sun_elevation_deg,
+                    "array_kw_dc": inv.array_kw_dc,
+                    "ac_capacity_kw": inv.ac_capacity_kw,
+                    "dc_ac_derate": inv.dc_ac_derate,
+                    "noct_c": inv.noct_c,
+                    "temp_coeff_per_c": inv.temp_coeff_per_c,
+                    "tilt_deg": inv.tilt_deg,
+                    "azimuth_deg": inv.azimuth_deg,
+                    "albedo": inv.albedo,
+                    "provider": snap.provider,
+                    "source_latitude": snap.source_latitude,
+                    "source_longitude": snap.source_longitude,
+                }
+                fh.write(json.dumps(row) + "\n")
+    except Exception as exc:  # pragma: no cover - non-critical logging
+        log.debug("Weather tuning log skipped: %s", exc)
 
 
 def _parse_simulated_time(raw: str | None, tz, log):
@@ -182,6 +232,7 @@ def main():
 
     summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log, state=state)
     alert_manager = AlertStateManager(log)
+    weather_client = WeatherClient(app_cfg.weather, log)
 
     if args.command in {"health", "simulate"}:
         if use_simulation:
@@ -196,6 +247,7 @@ def main():
         optimizer_counts_by_serial: dict[str, int] = {}
 
         serial_by_name: dict[str, str] = {}
+        weather_estimate = None
 
         if daylight_info.skip_modbus:
             log.info(
@@ -209,6 +261,14 @@ def main():
         else:
             snapshot_map, snapshot_items, serial_by_name = collect_modbus_snapshots(
                 reader, state, now, log
+            )
+
+        if not use_simulation and weather_client.enabled:
+            weather_estimate = weather_client.fetch(
+                now,
+                app_cfg.modbus.inverters,
+                fallback_lat=app_cfg.daylight.latitude,
+                fallback_lon=app_cfg.daylight.longitude,
             )
 
         if se_client.enabled and not daylight_info.skip_cloud:
@@ -228,11 +288,11 @@ def main():
                     serial_by_name.setdefault(cfg.name, serial)
 
         # --- stdout output ---
-        if snapshot_items and not args.quiet:
+        if not args.quiet:
             if args.json:
-                emit_json(snapshot_items, cloud_by_serial)
+                emit_json(snapshot_items, cloud_by_serial, weather_estimate=weather_estimate)
             else:
-                emit_human(snapshot_items, cloud_by_serial)
+                emit_human(snapshot_items, cloud_by_serial, weather_estimate=weather_estimate)
 
         health = None
         if snapshot_items:
@@ -299,6 +359,15 @@ def main():
                 )
             except Exception as exc:
                 log.warning("Failed to record health run: %s", exc)
+
+        if weather_estimate and app_cfg.weather.log_path and not use_simulation:
+            _log_weather_jsonl(
+                app_cfg.weather.log_path,
+                now,
+                weather_estimate,
+                snapshot_map,
+                log,
+            )
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:

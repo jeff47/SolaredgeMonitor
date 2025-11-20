@@ -11,6 +11,10 @@ class InverterConfig:
     port: int = 1502
     unit: int = 1
     expected_optimizers: int | None = None
+    array_kw_dc: float | None = None
+    ac_capacity_kw: float | None = None
+    tilt_deg: float | None = None
+    azimuth_deg: float | None = None
 
 
 @dataclass
@@ -92,6 +96,23 @@ class RetentionConfig:
 
 
 @dataclass
+class WeatherConfig:
+    enabled: bool = False
+    provider: str = "open-meteo"
+    latitude: float | None = None
+    longitude: float | None = None
+    tilt_deg: float = 20.0
+    azimuth_deg: float = 180.0
+    albedo: float = 0.2
+    array_kw_dc: float | None = None
+    ac_capacity_kw: float | None = None
+    dc_ac_derate: float = 0.9
+    noct_c: float = 45.0
+    temp_coeff_per_c: float = -0.0045
+    log_path: str | None = None
+
+
+@dataclass
 class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
@@ -102,6 +123,7 @@ class AppConfig:
     state: StateConfig
     simulation: SimulationConfig
     retention: RetentionConfig
+    weather: WeatherConfig
 
 
 class Config:
@@ -151,6 +173,14 @@ class Config:
                 inv_kwargs["unit"] = int(inv_sec["unit"])
             if "expected_optimizers" in inv_sec:
                 inv_kwargs["expected_optimizers"] = int(inv_sec["expected_optimizers"])
+            if "array_kw_dc" in inv_sec:
+                inv_kwargs["array_kw_dc"] = float(inv_sec["array_kw_dc"])
+            if "ac_capacity_kw" in inv_sec:
+                inv_kwargs["ac_capacity_kw"] = float(inv_sec["ac_capacity_kw"])
+            if "tilt_deg" in inv_sec:
+                inv_kwargs["tilt_deg"] = float(inv_sec["tilt_deg"])
+            if "azimuth_deg" in inv_sec:
+                inv_kwargs["azimuth_deg"] = float(inv_sec["azimuth_deg"])
             inverters.append(InverterConfig(**inv_kwargs))
 
         modbus_kwargs = {}
@@ -299,6 +329,38 @@ class Config:
             else True,
         )
 
+        # --- Weather ---
+        weather_kwargs = {}
+        if "weather" in p:
+            weather_sec = p["weather"]
+            if "enabled" in weather_sec:
+                weather_kwargs["enabled"] = _as_bool(weather_sec["enabled"])
+            if "provider" in weather_sec:
+                weather_kwargs["provider"] = weather_sec["provider"]
+            if "latitude" in weather_sec:
+                weather_kwargs["latitude"] = float(weather_sec["latitude"])
+            if "longitude" in weather_sec:
+                weather_kwargs["longitude"] = float(weather_sec["longitude"])
+            if "tilt_deg" in weather_sec:
+                weather_kwargs["tilt_deg"] = float(weather_sec["tilt_deg"])
+            if "azimuth_deg" in weather_sec:
+                weather_kwargs["azimuth_deg"] = float(weather_sec["azimuth_deg"])
+            if "albedo" in weather_sec:
+                weather_kwargs["albedo"] = float(weather_sec["albedo"])
+            if "array_kw_dc" in weather_sec:
+                weather_kwargs["array_kw_dc"] = float(weather_sec["array_kw_dc"])
+            if "ac_capacity_kw" in weather_sec:
+                weather_kwargs["ac_capacity_kw"] = float(weather_sec["ac_capacity_kw"])
+            if "dc_ac_derate" in weather_sec:
+                weather_kwargs["dc_ac_derate"] = float(weather_sec["dc_ac_derate"])
+            if "noct_c" in weather_sec:
+                weather_kwargs["noct_c"] = float(weather_sec["noct_c"])
+            if "temp_coeff_per_c" in weather_sec:
+                weather_kwargs["temp_coeff_per_c"] = float(weather_sec["temp_coeff_per_c"])
+            if "log_path" in weather_sec:
+                weather_kwargs["log_path"] = weather_sec["log_path"]
+        weather_cfg = WeatherConfig(**weather_kwargs)
+
         return AppConfig(
             modbus=modbus,
             pushover=pushover,
@@ -309,4 +371,5 @@ class Config:
             state=state_cfg,
             simulation=simulation_cfg,
             retention=retention_cfg,
+            weather=weather_cfg,
         )

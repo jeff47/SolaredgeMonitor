@@ -61,6 +61,23 @@ skip_se_api_at_night = true
 solaredge_api_key =
 solaredge_site_id =
 
+[weather]
+# Optional: enable weather-based expected output (Open-Meteo)
+enabled = false
+# coords default to [daylight] if omitted
+latitude =
+longitude =
+tilt_deg = 20.0
+azimuth_deg = 180.0
+albedo = 0.2
+array_kw_dc = 18.23
+ac_capacity_kw = 17.6
+dc_ac_derate = 0.9
+noct_c = 45
+temp_coeff_per_c = -0.0045
+# Optional: append per-run weather/expected-output rows to a JSONL file for tuning
+log_path =
+
 [state]
 # Path to SQLite database storing snapshots and summaries
 path = ~/.solaredge_monitor_state.db

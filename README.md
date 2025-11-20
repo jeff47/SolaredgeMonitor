@@ -6,6 +6,7 @@ This project polls SolarEdge inverters over Modbus, combines the readings with S
 
 - **Modbus health checks**: Reads configured inverters, evaluates per-inverter rules plus peer comparisons, and reports alerts.
 - **SolarEdge API integration**: Pulls status/optimizer counts from the cloud when enabled, enriching alerts and summaries.
+- **Weather context (optional)**: Fetches Open-Meteo irradiance/temp/cloud cover to show per-inverter expected output alongside real readings (info-only by default; optional JSONL logging for tuning).
 - **Daylight-aware polling**: A daylight policy decides whether to skip Modbus/cloud calls at night and when summaries should run.
 - **Simulation mode**: Use `[simulation]` config sections or `simulate --scenario NAME` to test alert logic with synthetic data and timestamps.
 - **SQLite history**: Per-run snapshots, optimizer counts, and site summaries are stored in `~/.solaredge_monitor_state.db` (or the path you specify).
@@ -20,6 +21,7 @@ Edit `solaredge_monitor.conf` to define your environment:
 - `[pushover]`, `[healthchecks]`: Enable flags and credentials for each notifier.
 - `[health]`: Thresholds for peer comparison, low PAC/Vdc checks, etc.
 - `[solaredge_api]`: Enable flag, API key/site ID, and optional night skipping.
+- `[weather]`: Optional Open-Meteo settings (enable flag, coordinates or fallback to `[daylight]`, tilt/azimuth/albedo, array kW DC, AC capacity, derate, NOCT, temp coefficient) to show expected per-inverter output vs. weather and optionally append JSONL rows (`log_path`) for tuning.
 - `[state]`: Path to the SQLite database (`~/.solaredge_monitor_state.db` by default).
 - `[simulation]` and `[simulation:scenario]`: Lists of inverters plus per-field overrides (PAC/Vdc/total_wh/optimizers). Include `simulated_time` to force a specific timestamp.
 - `[retention]`: `snapshot_days`, `summary_days`, and `vacuum_after_prune` control how `maintain-db` prunes the DB.
@@ -34,4 +36,3 @@ Run from the repo root:
 - `python -m solaredge_monitor.main --config ... maintain-db`: Prune historical data per `[retention]`. Override with `--snapshot-days`, `--summary-days`, `--no-vacuum` as needed.
 
 Use `--debug` for verbose logs, `--json` to print Modbus snapshots as JSON, and `--quiet` to suppress stdout output.
-
