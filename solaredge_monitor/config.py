@@ -90,6 +90,13 @@ class SimulationConfig:
 
 
 @dataclass
+class RetentionConfig:
+    snapshot_days: int = 30
+    summary_days: int = 90
+    vacuum_after_prune: bool = True
+
+
+@dataclass
 class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
@@ -100,6 +107,7 @@ class AppConfig:
     solaredge_api: SolarEdgeAPIConfig
     state: StateConfig
     simulation: SimulationConfig
+    retention: RetentionConfig
 
 
 class Config:
@@ -290,6 +298,19 @@ class Config:
             scenarios=sim_scenarios,
         )
 
+        if "retention" in p:
+            retention_sec = p["retention"]
+        else:
+            retention_sec = {}
+
+        retention_cfg = RetentionConfig(
+            snapshot_days=int(retention_sec.get("snapshot_days", 30) or 30),
+            summary_days=int(retention_sec.get("summary_days", 90) or 90),
+            vacuum_after_prune=(retention_sec.get("vacuum_after_prune", "true").strip().lower() == "true")
+            if retention_sec
+            else True,
+        )
+
         return AppConfig(
             modbus=modbus,
             pushover=pushover,
@@ -300,4 +321,5 @@ class Config:
             solaredge_api=solaredge_api_cfg,
             state=state_cfg,
             simulation=simulation_cfg,
+            retention=retention_cfg,
         )

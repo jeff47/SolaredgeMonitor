@@ -122,6 +122,9 @@ class DailySummaryService:
             per_inverter_wh=per_inverter,
         )
 
+        if self.state:
+            self.state.record_site_summary(day, site_wh_modbus, site_wh_api)
+
         self.mark_ran(day)
         self.state.flush()
         return summary

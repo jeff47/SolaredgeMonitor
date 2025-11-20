@@ -58,4 +58,24 @@ def build_parser():
         help="Which scenario(s) to simulate when sending notifications",
     )
 
+    cmd_maint = sub.add_parser(
+        "maintain-db",
+        help="Prune historical data from the state database based on retention settings",
+    )
+    cmd_maint.add_argument(
+        "--snapshot-days",
+        type=int,
+        help="Override retention days for inverter_snapshots",
+    )
+    cmd_maint.add_argument(
+        "--summary-days",
+        type=int,
+        help="Override retention days for site summaries",
+    )
+    cmd_maint.add_argument(
+        "--no-vacuum",
+        action="store_true",
+        help="Skip VACUUM after pruning",
+    )
+
     return parser

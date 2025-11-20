@@ -20,6 +20,7 @@ from .services.app_state import AppState
 from .services.alert_logic import Alert
 from .services.simulation_reader import SimulationReader
 from .services.simulation_api_client import SimulationAPIClient
+from .services import state_maintenance
 
 
 def _parse_simulated_time(raw: str | None, tz, log):
@@ -126,6 +127,23 @@ def main():
     if args.debug:
         logging.getLogger("pymodbus").setLevel(logging.INFO)
 
+    state_path = Path(app_cfg.state.path).expanduser() if app_cfg.state.path else None
+
+    if args.command == "maintain-db":
+        state = AppState(path=state_path)
+        snap_days = args.snapshot_days if getattr(args, "snapshot_days", None) is not None else app_cfg.retention.snapshot_days
+        summary_days = args.summary_days if getattr(args, "summary_days", None) is not None else app_cfg.retention.summary_days
+        vacuum = not getattr(args, "no_vacuum", False)
+        if vacuum is True and app_cfg.retention.vacuum_after_prune is False:
+            vacuum = False
+        state_maintenance.prune(state, snap_days, summary_days, vacuum=vacuum)
+        log.info(
+            "Database maintenance complete (snapshots>%sdays, summaries>%sdays removed)",
+            snap_days,
+            summary_days,
+        )
+        return
+
     # Determine simulation mode
     sim_cfg = app_cfg.simulation
     sim_cli_requested = args.command == "simulate"
@@ -135,7 +153,6 @@ def main():
     sim_root = sim_cfg.as_mapping() if use_simulation else None
 
     # Instantiate services
-    state_path = Path(app_cfg.state.path).expanduser() if app_cfg.state.path else None
     state = AppState(path=state_path, persist=not use_simulation)
     notifier = NotificationManager(app_cfg.pushover, app_cfg.healthchecks, log)
     evaluator = HealthEvaluator(app_cfg.health, log)
@@ -176,6 +193,7 @@ def main():
 
         cloud_inverters = []
         cloud_by_serial = {}
+        optimizer_counts_by_serial: dict[str, int] = {}
 
         serial_by_name: dict[str, str] = {}
 
@@ -195,11 +213,13 @@ def main():
 
         if se_client.enabled and not daylight_info.skip_cloud:
             cloud_inverters = se_client.fetch_inverters()
-            cloud_by_serial = {inv.serial: inv for inv in cloud_inverters}
             for inv in cloud_inverters:
-                serial = (inv.serial or "").upper()
+                raw_serial = inv.serial or ""
+                serial = raw_serial.upper()
                 if not serial:
                     continue
+                cloud_by_serial[serial] = inv
+                cloud_by_serial[raw_serial] = inv
                 serial_by_name.setdefault(inv.name, serial)
         else:
             for cfg in app_cfg.modbus.inverters:
@@ -223,8 +243,9 @@ def main():
             inv_cfg.expected_optimizers is not None for inv_cfg in app_cfg.modbus.inverters
         )
 
-        if se_client.enabled and not daylight_info.skip_cloud and has_optimizer_expectations:
+        if se_client.enabled and not daylight_info.skip_cloud:
             optimizer_counts_by_serial = se_client.get_optimizer_counts(cloud_inverters or None)
+        if se_client.enabled and not daylight_info.skip_cloud and has_optimizer_expectations:
             log.debug(
                 "Optimizer counts fetched: %s",
                 {k: optimizer_counts_by_serial[k] for k in sorted(optimizer_counts_by_serial)},
@@ -261,6 +282,23 @@ def main():
             )
         else:
             notifier.handle_alerts(alerts, health=health)
+
+        if (
+            args.command == "health"
+            and not use_simulation
+            and snapshot_map
+        ):
+            try:
+                state.log_health_run(
+                    run_timestamp=now,
+                    daylight_phase=daylight_info.phase,
+                    snapshots=snapshot_map,
+                    health=health,
+                    cloud_by_serial=cloud_by_serial,
+                    optimizer_counts=optimizer_counts_by_serial,
+                )
+            except Exception as exc:
+                log.warning("Failed to record health run: %s", exc)
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:
