@@ -77,7 +77,6 @@ class StateConfig:
 
 @dataclass
 class SimulationConfig:
-    enabled: bool = False
     scenario: str | None = None
     simulated_time: str | None = None
     settings: dict[str, str] = field(default_factory=dict)
@@ -259,14 +258,11 @@ class Config:
         state_cfg = StateConfig(**state_kwargs)
 
         # --- Simulation ---
-        sim_enabled = False
         sim_scenario: str | None = None
         sim_settings: dict[str, str] = {}
         sim_time: str | None = None
         if "simulation" in p:
             sim_sec = p["simulation"]
-            if "enabled" in sim_sec:
-                sim_enabled = _as_bool(sim_sec["enabled"])
             if "scenario" in sim_sec:
                 sim_scenario_raw = sim_sec["scenario"].strip()
                 sim_scenario = sim_scenario_raw or None
@@ -274,7 +270,7 @@ class Config:
                 sim_time_raw = sim_sec["simulated_time"].strip()
                 sim_time = sim_time_raw or None
             for key, value in sim_sec.items():
-                if key in {"enabled", "scenario", "simulated_time"}:
+                if key in {"scenario", "simulated_time"}:
                     continue
                 sim_settings[key] = value
 
@@ -288,7 +284,6 @@ class Config:
             sim_scenarios[scenario_name] = dict(p[section])
 
         simulation_cfg = SimulationConfig(
-            enabled=sim_enabled,
             scenario=sim_scenario,
             simulated_time=sim_time,
             settings=sim_settings,

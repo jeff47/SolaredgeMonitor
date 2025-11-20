@@ -131,7 +131,7 @@ def main():
     sim_cli_requested = args.command == "simulate"
     cli_scenario = getattr(args, "scenario", None)
     sim_scenario = cli_scenario or sim_cfg.scenario
-    use_simulation = sim_cli_requested or sim_cfg.enabled
+    use_simulation = sim_cli_requested
     sim_root = sim_cfg.as_mapping() if use_simulation else None
 
     # Instantiate services
