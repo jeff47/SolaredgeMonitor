@@ -37,6 +37,11 @@ def _log_weather_jsonl(path: str, run_ts, weather_estimate, snapshot_map, log) -
             for name, snap in snapshot_map.items():
                 if snap and snap.pac_w is not None:
                     pac_map[name] = snap.pac_w
+        # Skip logging when we have no inverter power data (nighttime/offline) or sun is below the horizon.
+        if not pac_map:
+            return
+        if weather_estimate.snapshot.sun_elevation_deg is not None and weather_estimate.snapshot.sun_elevation_deg <= 0:
+            return
 
         snap = weather_estimate.snapshot
         with target.open("a", encoding="utf-8") as fh:

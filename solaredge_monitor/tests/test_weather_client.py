@@ -90,3 +90,50 @@ def test_weather_disabled_short_circuits():
     invs = [InverterConfig(name="INV", host="127.0.0.1")]
 
     assert client.fetch(now, invs, fallback_lat=0.0, fallback_lon=0.0) is None
+
+
+def test_weather_zero_when_sun_below_horizon():
+    # If the sun is below the horizon, expected output should be zero even if the feed reports residual irradiance.
+    payload = {
+        "timezone": "UTC",
+        "current": {
+            "time": "2024-01-01T02:00",
+            "temperature_2m": 10.0,
+            "cloud_cover": 95,
+            "weather_code": 3,
+        },
+        "hourly": {
+            "time": ["2024-01-01T02:00"],
+            # Deliberately non-zero twilight-ish numbers to ensure we clamp to zero with sun elevation < 0.
+            "shortwave_radiation": [30.0],
+            "direct_normal_irradiance": [10.0],
+            "diffuse_radiation": [20.0],
+            "temperature_2m": [10.0],
+            "cloud_cover": [95],
+            "wind_speed_10m": [1.0],
+        },
+    }
+
+    cfg = WeatherConfig(
+        enabled=True,
+        latitude=39.0,
+        longitude=-77.0,
+        tilt_deg=20.0,
+        azimuth_deg=180.0,
+        albedo=0.2,
+        array_kw_dc=18.0,
+        ac_capacity_kw=10.0,
+        dc_ac_derate=0.9,
+        noct_c=45.0,
+        temp_coeff_per_c=-0.0045,
+    )
+    invs = [InverterConfig(name="INV1", host="127.0.0.1")]
+    now = datetime(2024, 1, 1, 2, 0, tzinfo=ZoneInfo("UTC"))
+
+    client = WeatherClient(cfg, LOG, session=FakeSession(payload))
+    estimate = client.fetch(now, invs, fallback_lat=cfg.latitude, fallback_lon=cfg.longitude)
+
+    assert estimate is not None
+    inv_est = estimate.per_inverter["INV1"]
+    assert inv_est.expected_ac_kw == 0.0
+    assert inv_est.expected_dc_kw == 0.0

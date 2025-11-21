@@ -67,6 +67,9 @@ def _poa_irradiance(
     """Return (poa, cos_incidence)."""
     if sun_el_deg is None or sun_az_deg is None:
         return None, None
+    # Treat sun below the horizon as dark: do not synthesize production off twilight diffuse.
+    if sun_el_deg <= 0:
+        return 0.0, 0.0
     if diffuse is None or ghi is None:
         return None, None
 
