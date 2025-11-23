@@ -383,13 +383,51 @@ def main():
                 log,
             )
 
+        daylight_ctx = None
+        if daylight_info:
+            daylight_ctx = {
+                "phase": daylight_info.phase,
+                "is_daylight": daylight_info.is_daylight,
+                "in_grace_window": daylight_info.in_grace_window,
+                "production_day_over": daylight_info.production_day_over,
+                "skip_modbus": daylight_info.skip_modbus,
+                "skip_cloud": daylight_info.skip_cloud,
+                "sunrise": getattr(daylight_info, "sunrise", None),
+                "sunrise_grace_end": getattr(daylight_info, "sunrise_grace_end", None),
+                "sunset": getattr(daylight_info, "sunset", None),
+                "sunset_grace_start": getattr(daylight_info, "sunset_grace_start", None),
+                "production_over_at": getattr(daylight_info, "production_over_at", None),
+            }
+
+        residuals = None
+        if snapshot_map and weather_estimate and weather_estimate.per_inverter:
+            res_map: dict[str, dict[str, float | None]] = {}
+            for name, snap in snapshot_map.items():
+                inv = weather_estimate.per_inverter.get(name)
+                if not inv or snap is None:
+                    continue
+                if snap.pac_w is None or inv.expected_ac_kw is None:
+                    continue
+                expected_w = inv.expected_ac_kw * 1000
+                if expected_w <= 0:
+                    continue
+                res_map[name] = {
+                    "pac_w": snap.pac_w,
+                    "expected_ac_w": expected_w,
+                    "residual_w": snap.pac_w - expected_w,
+                    "ratio": snap.pac_w / expected_w if expected_w else None,
+                }
+            residuals = res_map or None
+
         if structured_logger.enabled:
             run_entry = RunLogEntry(
                 timestamp=now.isoformat(),
                 daylight_phase=getattr(daylight_info, "phase", None),
+                daylight_context=daylight_ctx,
                 inverter_snapshots=snapshot_map or None,
                 weather_snapshot=weather_estimate.snapshot if weather_estimate else None,
                 weather_expectations=weather_estimate.per_inverter if weather_estimate else None,
+                residuals=residuals,
                 health=health,
                 alerts=alerts,
                 cloud_inventory=cloud_inverters or None,

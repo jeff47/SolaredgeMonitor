@@ -13,9 +13,11 @@ def test_structured_log_writes_json():
         entry = RunLogEntry(
             timestamp="2024-01-01T00:00:00Z",
             daylight_phase="day",
+            daylight_context={"phase": "day", "in_grace_window": False},
             inverter_snapshots={"INV1": {"pac_w": 100}},
             weather_snapshot={"ghi_wm2": 123.0},
             weather_expectations={"INV1": {"expected_ac_kw": 0.1}},
+            residuals={"INV1": {"pac_w": 100, "expected_ac_w": 120, "residual_w": -20, "ratio": 0.83}},
             health={"INV1": {"status": "ok"}},
             alerts=[{"message": "none"}],
             cloud_inventory=None,

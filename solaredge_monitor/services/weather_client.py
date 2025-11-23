@@ -218,6 +218,7 @@ class WeatherClient:
         cloud = current.get("cloud_cover")
         wind = _get(hourly.get("wind_speed_10m"))
         weather_code = current.get("weather_code")
+        matched_series_time = _parse_time(times[idx], tz) if idx is not None and idx < len(times) else None
 
         current_time = _parse_time(current.get("time"), tz) or now.astimezone(tz)
 
@@ -232,6 +233,7 @@ class WeatherClient:
 
         snapshot = WeatherSnapshot(
             timestamp=current_time,
+            source_series_time=matched_series_time,
             cloud_cover_pct=float(cloud) if cloud is not None else None,
             temp_c=float(temp_c) if temp_c is not None else None,
             wind_mps=float(wind) if wind is not None else None,

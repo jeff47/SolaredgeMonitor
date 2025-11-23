@@ -8,6 +8,7 @@ from typing import Dict, Optional
 @dataclass
 class WeatherSnapshot:
     timestamp: datetime
+    source_series_time: Optional[datetime]
     cloud_cover_pct: Optional[float]
     temp_c: Optional[float]
     wind_mps: Optional[float]

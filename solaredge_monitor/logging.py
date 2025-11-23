@@ -43,9 +43,11 @@ class ConsoleLog:
 class RunLogEntry:
     timestamp: str
     daylight_phase: str | None
+    daylight_context: dict[str, Any] | None
     inverter_snapshots: dict[str, Any] | None
     weather_snapshot: dict[str, Any] | None
     weather_expectations: dict[str, Any] | None
+    residuals: dict[str, Any] | None
     health: dict[str, Any] | None
     alerts: list[dict[str, Any]] | None
     cloud_inventory: list[dict[str, Any]] | None
