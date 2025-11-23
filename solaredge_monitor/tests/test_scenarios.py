@@ -3,7 +3,7 @@
 import pytest
 from solaredge_monitor.tests.fake_reader import MockModbusReader
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
-from solaredge_monitor.util.logging import setup_logging, get_logger
+from solaredge_monitor.logging import ConsoleLog, get_logger
 from solaredge_monitor.config import InverterConfig
 
 
@@ -17,7 +17,7 @@ class DummyCfg:
 
 def _eval(values):
     """Helper: run evaluation on a dict of inverter->value mappings."""
-    setup_logging(debug=False)
+    ConsoleLog(level="INFO", quiet=True).setup()
     log = get_logger("test")
     evaluator = HealthEvaluator(DummyCfg(), log)
     reader = MockModbusReader(values, log)
@@ -279,7 +279,7 @@ def test_midrange_asymmetry_should_fail():
 
 
 def test_optimizer_count_mismatch_flags_inverter():
-    setup_logging(debug=False)
+    ConsoleLog(level="INFO", quiet=True).setup()
     log = get_logger("test")
     evaluator = HealthEvaluator(DummyCfg(), log)
     reader = MockModbusReader({

@@ -2,7 +2,7 @@
 
 from .fake_reader import MockModbusReader
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
-from solaredge_monitor.util.logging import setup_logging, get_logger
+from solaredge_monitor.logging import ConsoleLog, get_logger
 
 
 # Minimal config object for HealthEvaluator
@@ -16,7 +16,7 @@ class DummyCfg:
 
 def test_basic_reader_and_health():
     # Prepare logging for tests
-    setup_logging(debug=False)
+    ConsoleLog(level="INFO", quiet=True).setup()
     log = get_logger("test")
 
     reader = MockModbusReader({

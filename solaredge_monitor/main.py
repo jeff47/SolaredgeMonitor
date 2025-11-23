@@ -7,7 +7,7 @@ import json
 
 from .cli import build_parser
 from .config import Config
-from .util.logging import setup_logging
+from .logging import ConsoleLog, StructuredLog, RunLogEntry
 
 from .services.modbus_reader import ModbusReader
 from .services.notification_manager import NotificationManager
@@ -178,7 +178,16 @@ def main():
     args = parser.parse_args()
 
     app_cfg = Config.load(args.config)
-    log = setup_logging(debug=args.debug, quiet=args.quiet)
+    console_logger = ConsoleLog(
+        level="DEBUG" if args.debug else app_cfg.logging.console_level,
+        quiet=args.quiet or app_cfg.logging.console_quiet,
+        debug_modules=app_cfg.logging.debug_modules,
+    )
+    log = console_logger.setup()
+    structured_logger = StructuredLog(
+        app_cfg.logging.structured_path,
+        app_cfg.logging.structured_enabled,
+    )
     if args.debug:
         logging.getLogger("pymodbus").setLevel(logging.INFO)
 
@@ -373,6 +382,20 @@ def main():
                 snapshot_map,
                 log,
             )
+
+        if structured_logger.enabled:
+            run_entry = RunLogEntry(
+                timestamp=now.isoformat(),
+                daylight_phase=getattr(daylight_info, "phase", None),
+                inverter_snapshots=snapshot_map or None,
+                weather_snapshot=weather_estimate.snapshot if weather_estimate else None,
+                weather_expectations=weather_estimate.per_inverter if weather_estimate else None,
+                health=health,
+                alerts=alerts,
+                cloud_inventory=cloud_inverters or None,
+                optimizer_counts=optimizer_counts_by_serial or None,
+            )
+            structured_logger.write(run_entry)
 
         should_run_summary = summary_service.should_run(now.date(), daylight_info)
         if should_run_summary:

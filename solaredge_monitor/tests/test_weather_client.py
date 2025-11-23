@@ -5,10 +5,10 @@ from zoneinfo import ZoneInfo
 
 from solaredge_monitor.config import InverterConfig, WeatherConfig
 from solaredge_monitor.services.weather_client import WeatherClient
-from solaredge_monitor.util.logging import get_logger, setup_logging
+from solaredge_monitor.logging import ConsoleLog, get_logger
 
 
-setup_logging(debug=False)
+ConsoleLog(level="INFO", quiet=True).setup()
 LOG = get_logger("weather-test")
 
 

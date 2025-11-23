@@ -4,10 +4,10 @@ from datetime import date
 
 from solaredge_monitor.config import SolarEdgeAPIConfig
 from solaredge_monitor.services.se_api_client import CloudInverter, SolarEdgeAPIClient
-from solaredge_monitor.util.logging import get_logger, setup_logging
+from solaredge_monitor.logging import ConsoleLog, get_logger
 
 
-setup_logging(debug=False)
+ConsoleLog(level="INFO", quiet=True).setup()
 LOG = get_logger("se-api-test")
 
 

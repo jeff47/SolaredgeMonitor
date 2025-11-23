@@ -113,6 +113,15 @@ class WeatherConfig:
 
 
 @dataclass
+class LoggingConfig:
+    console_level: str = "INFO"
+    console_quiet: bool = False
+    debug_modules: list[str] = field(default_factory=list)
+    structured_enabled: bool = False
+    structured_path: str | None = None
+
+
+@dataclass
 class AppConfig:
     modbus: ModbusConfig
     pushover: PushoverConfig
@@ -124,6 +133,7 @@ class AppConfig:
     simulation: SimulationConfig
     retention: RetentionConfig
     weather: WeatherConfig
+    logging: LoggingConfig
 
 
 class Config:
@@ -361,6 +371,22 @@ class Config:
                 weather_kwargs["log_path"] = weather_sec["log_path"]
         weather_cfg = WeatherConfig(**weather_kwargs)
 
+        logging_kwargs = {}
+        if "logging" in p:
+            logging_sec = p["logging"]
+            if "console_level" in logging_sec:
+                logging_kwargs["console_level"] = logging_sec["console_level"]
+            if "console_quiet" in logging_sec:
+                logging_kwargs["console_quiet"] = _as_bool(logging_sec["console_quiet"])
+            if "debug_modules" in logging_sec:
+                raw = logging_sec["debug_modules"]
+                logging_kwargs["debug_modules"] = [x.strip() for x in raw.split(",") if x.strip()]
+            if "structured_enabled" in logging_sec:
+                logging_kwargs["structured_enabled"] = _as_bool(logging_sec["structured_enabled"])
+            if "structured_path" in logging_sec:
+                logging_kwargs["structured_path"] = logging_sec["structured_path"]
+        logging_cfg = LoggingConfig(**logging_kwargs)
+
         return AppConfig(
             modbus=modbus,
             pushover=pushover,
@@ -372,4 +398,5 @@ class Config:
             simulation=simulation_cfg,
             retention=retention_cfg,
             weather=weather_cfg,
+            logging=logging_cfg,
         )

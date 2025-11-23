@@ -5,11 +5,11 @@ from datetime import date
 
 from solaredge_monitor.config import Config
 from solaredge_monitor.services.se_api_client import SolarEdgeAPIClient
-from solaredge_monitor.util.logging import setup_logging
+from solaredge_monitor.logging import ConsoleLog
 
 
 def main() -> None:
-    log = setup_logging(debug=True)
+    log = ConsoleLog(level="DEBUG", quiet=False).setup()
     cfg = Config.load("solaredge_monitor.conf")
     client = SolarEdgeAPIClient(cfg.solaredge_api, log)
 

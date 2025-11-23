@@ -7,10 +7,10 @@ from solaredge_monitor.models.inverter import InverterSnapshot
 from solaredge_monitor.services.daily_summary import DailySummaryService
 from solaredge_monitor.services.se_api_client import CloudInverter
 from solaredge_monitor.services.app_state import AppState
-from solaredge_monitor.util.logging import get_logger, setup_logging
+from solaredge_monitor.logging import ConsoleLog, get_logger
 
 
-setup_logging(debug=False)
+ConsoleLog(level="INFO", quiet=True).setup()
 LOG = get_logger("daily-summary-test")
 
 

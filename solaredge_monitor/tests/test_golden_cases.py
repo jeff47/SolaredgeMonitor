@@ -7,10 +7,10 @@ import pytest
 
 from solaredge_monitor.tests.fake_reader import MockModbusReader
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
-from solaredge_monitor.util.logging import setup_logging, get_logger
+from solaredge_monitor.logging import ConsoleLog, get_logger
 
 
-setup_logging(debug=False)
+ConsoleLog(level="INFO", quiet=True).setup()
 LOG = get_logger("golden")
 CASES_DIR = Path(__file__).with_name("golden_cases")
 

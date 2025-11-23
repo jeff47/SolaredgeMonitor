@@ -15,7 +15,7 @@ from pathlib import Path
 from solaredge_monitor.config import Config
 from solaredge_monitor.services.modbus_reader import ModbusReader
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
-from solaredge_monitor.util.logging import setup_logging
+from solaredge_monitor.logging import ConsoleLog
 
 
 CONFIG_PATH = "solaredge_monitor.conf"
@@ -40,7 +40,7 @@ def pretty_print_reading(r):
 
 
 def main():
-    log = setup_logging()
+    log = ConsoleLog(level="INFO", quiet=False).setup()
 
     # ------------------------
     # Load config

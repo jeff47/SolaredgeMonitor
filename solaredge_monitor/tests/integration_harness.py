@@ -26,7 +26,7 @@ from solaredge_monitor.models.system_health import SystemHealth
 from solaredge_monitor.services.alert_logic import Alert, evaluate_alerts
 from solaredge_monitor.services.health_evaluator import HealthEvaluator
 from solaredge_monitor.tests.fake_reader import MockModbusReader
-from solaredge_monitor.util.logging import get_logger, setup_logging
+from solaredge_monitor.logging import ConsoleLog, get_logger
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ class IntegrationTestHarness:
         health_cfg: Optional[HealthConfig] = None,
         log_name: str = "integration-test",
     ) -> None:
-        setup_logging(debug=False)
+        ConsoleLog(level="INFO", quiet=True).setup()
         self.log = get_logger(log_name)
         self.health_cfg = health_cfg or HealthConfig(
             peer_ratio_threshold=0.60,
