@@ -3,100 +3,108 @@
 
 [daylight]
 # Location/timezone for sunrise/sunset calculations
-latitude = 39.0000
-longitude = -77.0000
-timezone = America/New_York
+latitude = 39.0000              # Site latitude (deg)
+longitude = -77.0000            # Site longitude (deg)
+timezone = America/New_York     # IANA timezone
 # Minutes before/after sunrise/sunset to treat readings with grace
-sunrise_grace_minutes = 30
-sunset_grace_minutes = 30
-summary_delay_minutes = 45
+sunrise_grace_minutes = 30      # Grace after sunrise
+sunset_grace_minutes = 30       # Grace before sunset
+summary_delay_minutes = 45      # Delay after sunset to send summary
 # Static sunrise/sunset if Astral/coordinates unavailable
-static_sunrise = 06:30
-static_sunset = 20:30
+static_sunrise = 06:30          # Fallback sunrise
+static_sunset = 20:30           # Fallback sunset
 
 [modbus]
 # Comma-separated list of inverter names configured below
-inverters = SE10000H, SE7600H
+inverters = SE10000H, SE7600H   # Must match [inverter:*] sections
 # Connection retries/timeouts in seconds
-retries = 3
-timeout = 3.0
-skip_modbus_at_night = true
+retries = 3                     # Modbus retries
+timeout = 3.0                   # Modbus timeout (s)
+skip_modbus_at_night = true     # Set false to poll Modbus overnight
 
 [inverter:SE10000H]
 # Modbus TCP host/port/unit ID and optional optimizer expectation
-host = 192.168.0.10
-port = 1502
-unit = 1
-expected_optimizers = 26
+host = 192.168.0.10             # Inverter IP
+port = 1502                     # Modbus port
+unit = 1                        # Modbus unit ID
+expected_optimizers = 26        # Expected connected optimizers
+array_kw_dc =                   # Optional DC array size (kW)
+ac_capacity_kw =                # Optional AC rating (kW)
+tilt_deg =                      # Optional array tilt (deg)
+azimuth_deg =                   # Optional array azimuth (deg)
 
 [inverter:SE7600H]
-host = 192.168.0.11
-port = 1502
-unit = 1
-expected_optimizers = 19
+host = 192.168.0.11             # Inverter IP
+port = 1502                     # Modbus port
+unit = 1                        # Modbus unit ID
+expected_optimizers = 19        # Expected connected optimizers
+array_kw_dc =                   # Optional DC array size (kW)
+ac_capacity_kw =                # Optional AC rating (kW)
+tilt_deg =                      # Optional array tilt (deg)
+azimuth_deg =                   # Optional array azimuth (deg)
 
 [pushover]
 # Set enabled/token/user to send alerts via Pushover
-enabled = false
-token =
-user =
+enabled = false                 # Enable Pushover
+token =                         # Pushover app token
+user =                          # Pushover user key
 
 [healthchecks]
 # Enable + ping URL to report success/failure via Healthchecks.io
-enabled = false
-ping_url =
+enabled = false                 # Enable Healthchecks
+ping_url =                      # Healthchecks ping URL
 
 [health]
 # Thresholds for peer comparisons and low PAC/Vdc detection
-peer_ratio_threshold = 0.20
-min_production_for_peer_check = 50
-low_light_peer_skip_threshold = 20
-low_pac_threshold = 10
-low_vdc_threshold = 50
-min_alert_sun_el_deg = 6.0   # Suppress low-PAC alerts when sun elevation is below this (degrees)
+peer_ratio_threshold = 0.20          # Min low/high PAC ratio to avoid peer alert
+min_production_for_peer_check = 50   # Skip peer check below this PAC (W)
+low_light_peer_skip_threshold = 20   # Treat both inverters < this as low light
+low_pac_threshold = 10               # Flag producing inverters below this PAC (W)
+low_vdc_threshold = 50               # Flag Vdc below this (V)
+min_alert_sun_el_deg = 6.0          # Suppress low-PAC alerts below this sun elevation (deg)
 
 [solaredge_api]
 # Enable and provide API credentials to fetch optimizer counts/site data
-enabled = false
-skip_se_api_at_night = true
-solaredge_api_key =
-solaredge_site_id =
+enabled = false                    # Enable SolarEdge cloud API
+skip_se_api_at_night = true        # Set false to poll API overnight
+solaredge_api_key =                # API key
+solaredge_site_id =                # Site ID
 
 [weather]
 # Optional: enable weather-based expected output (Open-Meteo)
-enabled = false
+enabled = false                   # Enable weather-based expectations
 # coords default to [daylight] if omitted
-latitude =
-longitude =
-tilt_deg = 20.0
-azimuth_deg = 180.0
-albedo = 0.2
-array_kw_dc = 18.23
-ac_capacity_kw = 17.6
-dc_ac_derate = 0.9
-noct_c = 45
-temp_coeff_per_c = -0.0045
+latitude =                        # Optional override latitude
+longitude =                       # Optional override longitude
+tilt_deg = 20.0                   # Default tilt (deg)
+azimuth_deg = 180.0               # Default azimuth (deg)
+albedo = 0.2                      # Ground reflectance
+array_kw_dc = 18.23               # Site DC size (kW)
+ac_capacity_kw = 17.6             # Site AC capacity (kW)
+dc_ac_derate = 0.9                # DC-to-AC derate factor
+noct_c = 45                       # NOCT rating (C)
+temp_coeff_per_c = -0.0045        # Temp coefficient (/C)
 # Optional: append per-run weather/expected-output rows to a JSONL file for tuning
-log_path =
+log_path =                        # Path to JSONL for weather/expectations
 
 [state]
 # Path to SQLite database storing snapshots and summaries
-path = ~/.solaredge_monitor_state.db
+path = ~/.solaredge_monitor_state.db   # SQLite state DB path
 
 [retention]
 # How long to keep inverter snapshots/site summaries; prune via maintain-db
-snapshot_days = 30
-summary_days = 90
-vacuum_after_prune = true
+snapshot_days = 30                # Days to keep inverter_snapshots
+summary_days = 90                 # Days to keep site_summaries
+vacuum_after_prune = true         # Run VACUUM after prune
 
 [simulation]
 # Defaults for the simulator; override per scenario with [simulation:name]
-inverters = SE10000H, SE7600H
-simulated_time = 2024-06-01T12:00:00-04:00
-inverter_status = SE10000H:4, SE7600H:4
-inverter_pac_w = SE10000H:800, SE7600H:600
-inverter_vdc = SE10000H:400, SE7600H:380
-inverter_idc = SE10000H:2.0, SE7600H:1.5
-inverter_total_wh = SE10000H:120000, SE7600H:118000
-inverter_daily_wh = SE10000H:3000, SE7600H:2500
-inverter_optimizers = SE10000H:26, SE7600H:19
+inverters = SE10000H, SE7600H        # Simulated inverter names
+simulated_time = 2024-06-01T12:00:00-04:00  # Fixed time for simulation
+inverter_status = SE10000H:4, SE7600H:4     # Simulated status codes
+inverter_pac_w = SE10000H:800, SE7600H:600  # Simulated PAC (W)
+inverter_vdc = SE10000H:400, SE7600H:380    # Simulated Vdc (V)
+inverter_idc = SE10000H:2.0, SE7600H:1.5    # Simulated Idc (A)
+inverter_total_wh = SE10000H:120000, SE7600H:118000  # Simulated lifetime Wh
+inverter_daily_wh = SE10000H:3000, SE7600H:2500      # Simulated daily Wh
+inverter_optimizers = SE10000H:26, SE7600H:19        # Simulated optimizer counts
