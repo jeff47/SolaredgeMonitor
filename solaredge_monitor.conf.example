@@ -53,6 +53,7 @@ min_production_for_peer_check = 50
 low_light_peer_skip_threshold = 20
 low_pac_threshold = 10
 low_vdc_threshold = 50
+min_alert_sun_el_deg = 6.0   # Suppress low-PAC alerts when sun elevation is below this (degrees)
 
 [solaredge_api]
 # Enable and provide API credentials to fetch optimizer counts/site data

@@ -34,7 +34,13 @@ class HealthEvaluator:
     # Per-inverter evaluation
     # ----------------------------------------------------------------------
 
-    def evaluate_inverter(self, name: str, reading: Optional[InverterSnapshot]) -> InverterHealth:
+    def evaluate_inverter(
+        self,
+        name: str,
+        reading: Optional[InverterSnapshot],
+        *,
+        sun_elevation_deg: float | None = None,
+    ) -> InverterHealth:
         """Evaluate a single inverter from its Modbus reading."""
         if reading is None:
             return InverterHealth(
@@ -73,11 +79,17 @@ class HealthEvaluator:
         # Producing but extremely low PAC (< configured threshold)
         # ---------------------------------------
         low_pac_threshold = self.cfg.low_pac_threshold
+        min_alert_sun_el_deg = self.cfg.min_alert_sun_el_deg
         if (
             status == 4
             and low_pac_threshold is not None
             and reading.pac_w is not None
             and reading.pac_w < low_pac_threshold
+            and not (
+                min_alert_sun_el_deg is not None
+                and sun_elevation_deg is not None
+                and sun_elevation_deg < min_alert_sun_el_deg
+            )
         ):
             return InverterHealth(
                 name=name,
@@ -183,12 +195,17 @@ class HealthEvaluator:
                 inv_state.inverter_ok = True
                 inv_state.reason = None
 
-    def evaluate(self, readings: Dict[str, InverterSnapshot], low_light_grace: bool = False) -> SystemHealth:
+    def evaluate(
+        self,
+        readings: Dict[str, InverterSnapshot],
+        low_light_grace: bool = False,
+        sun_elevation_deg: float | None = None,
+    ) -> SystemHealth:
         # --------------------------------------------------------------
         # 1. FIRST: per-inverter checks (never skipped)
         # --------------------------------------------------------------
         per_inverter = {
-            name: self.evaluate_inverter(name, reading)
+            name: self.evaluate_inverter(name, reading, sun_elevation_deg=sun_elevation_deg)
             for name, reading in readings.items()
         }
 

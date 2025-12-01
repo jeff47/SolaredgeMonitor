@@ -309,8 +309,13 @@ def main():
                 emit_human(snapshot_items, cloud_by_serial, weather_estimate=weather_estimate)
 
         health = None
+        sun_el = weather_estimate.snapshot.sun_elevation_deg if weather_estimate else None
         if snapshot_items:
-            health = evaluator.evaluate(snapshot_map, low_light_grace=daylight_info.in_grace_window)
+            health = evaluator.evaluate(
+                snapshot_map,
+                low_light_grace=daylight_info.in_grace_window,
+                sun_elevation_deg=sun_el,
+            )
 
         optimizer_mismatches: list[tuple[str, int, int | None]] = []
         has_optimizer_expectations = any(
