@@ -11,6 +11,7 @@ class DummyCfg:
     low_light_peer_skip_threshold = 20   # Peer checks skipped under this PAC
     low_pac_threshold = 10
     low_vdc_threshold = 50
+    min_alert_sun_el_deg = None
 
 
 def _mk_evaluator():

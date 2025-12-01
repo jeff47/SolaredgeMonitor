@@ -12,6 +12,7 @@ class DummyCfg:
     low_light_peer_skip_threshold = 20
     low_pac_threshold = 10
     low_vdc_threshold = 50
+    min_alert_sun_el_deg = None
 
 
 def test_basic_reader_and_health():
