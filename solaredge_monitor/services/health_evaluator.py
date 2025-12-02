@@ -53,12 +53,18 @@ class HealthEvaluator:
 
         status = reading.status
         status_str = self.STATUS_MAP.get(status, f"Unknown({status})")
+        min_alert_sun_el_deg = self.cfg.min_alert_sun_el_deg
+        sun_angle_suppressed = (
+            min_alert_sun_el_deg is not None
+            and sun_elevation_deg is not None
+            and sun_elevation_deg < min_alert_sun_el_deg
+        )
 
         # ---------------------------------------
         # Abnormal statuses (ALWAYS unhealthy)
         # ---------------------------------------
         if status in (2, 3, 6):   # Sleeping, Starting, Shutting Down
-            if not dark_irradiance:
+            if not (dark_irradiance or sun_angle_suppressed):
                 return InverterHealth(
                     name=name,
                     inverter_ok=False,
@@ -87,7 +93,6 @@ class HealthEvaluator:
         # Producing but extremely low PAC (< configured threshold)
         # ---------------------------------------
         low_pac_threshold = self.cfg.low_pac_threshold
-        min_alert_sun_el_deg = self.cfg.min_alert_sun_el_deg
         if (
             status == 4
             and not dark_irradiance
@@ -227,10 +232,18 @@ class HealthEvaluator:
 
         # If any inverter has a NON-producing status (2,3,5,6,7),
         # low-light/cloudy logic must NOT override it.
+        sun_angle_suppressed = (
+            self.cfg.min_alert_sun_el_deg is not None
+            and sun_elevation_deg is not None
+            and sun_elevation_deg < self.cfg.min_alert_sun_el_deg
+        )
         abnormal_status_present = any(
             inv.reading
             and inv.reading.status not in (4,)
-            and not (dark_irradiance and inv.reading.status in (2, 3, 6))
+            and not (
+                (dark_irradiance or sun_angle_suppressed)
+                and inv.reading.status in (2, 3, 6)
+            )
             for inv in per_inverter.values()
         )
 

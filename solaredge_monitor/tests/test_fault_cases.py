@@ -202,3 +202,26 @@ def test_dark_irradiance_does_not_hide_fault_state():
     assert not health.system_ok
     assert not health.per_inverter["INV-A"].inverter_ok
     assert health.per_inverter["INV-B"].inverter_ok
+
+
+# ---------------------------------------------------------------------------
+# 9. Low sun angle should suppress sleeping alerts
+# ---------------------------------------------------------------------------
+
+def test_low_sun_angle_suppresses_sleeping_status():
+    class AngleCfg(DummyCfg):
+        min_alert_sun_el_deg = 6.0
+
+    ConsoleLog(level="INFO", quiet=True).setup()
+    evaluator = HealthEvaluator(AngleCfg(), get_logger("test"))
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 2, "pac_w": 0, "vdc_v": 0},
+        "INV-B": {"status": 6, "pac_w": 0, "vdc_v": 0},
+    }, evaluator.log)
+
+    health = evaluator.evaluate(reader.read_all(), sun_elevation_deg=0.5)
+
+    assert health.system_ok
+    assert health.per_inverter["INV-A"].inverter_ok
+    assert health.per_inverter["INV-B"].inverter_ok
