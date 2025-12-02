@@ -225,3 +225,61 @@ def test_low_sun_angle_suppresses_sleeping_status():
     assert health.system_ok
     assert health.per_inverter["INV-A"].inverter_ok
     assert health.per_inverter["INV-B"].inverter_ok
+
+
+# ---------------------------------------------------------------------------
+# 10. Low sun angle should suppress starting status
+# ---------------------------------------------------------------------------
+
+def test_low_sun_angle_suppresses_starting_status():
+    class AngleCfg(DummyCfg):
+        min_alert_sun_el_deg = 6.0
+
+    ConsoleLog(level="INFO", quiet=True).setup()
+    evaluator = HealthEvaluator(AngleCfg(), get_logger("test"))
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 3, "pac_w": 0, "vdc_v": 0},  # Starting
+    }, evaluator.log)
+
+    health = evaluator.evaluate(reader.read_all(), sun_elevation_deg=0.2)
+
+    assert health.system_ok
+    assert health.per_inverter["INV-A"].inverter_ok
+
+
+# ---------------------------------------------------------------------------
+# 11. GHI-derived dark_irradiance should suppress sleeping but not when above threshold
+# ---------------------------------------------------------------------------
+
+def test_ghi_threshold_controls_dark_irradiance_gate():
+    class IrrCfg(DummyCfg):
+        min_alert_irradiance_wm2 = 10.0
+        min_alert_sun_el_deg = None
+
+    ConsoleLog(level="INFO", quiet=True).setup()
+    evaluator = HealthEvaluator(IrrCfg(), get_logger("test"))
+
+    base_readings = {
+        "INV-A": {"status": 2, "pac_w": 0, "vdc_v": 0},  # Sleeping
+    }
+
+    # Below threshold (GHI <= 10): should suppress alert
+    dark_flag = 5.0 <= IrrCfg.min_alert_irradiance_wm2
+    health_dark = evaluator.evaluate(
+        MockModbusReader(base_readings, evaluator.log).read_all(),
+        dark_irradiance=dark_flag,
+        sun_elevation_deg=10.0,  # day
+    )
+    assert health_dark.system_ok
+    assert health_dark.per_inverter["INV-A"].inverter_ok
+
+    # Above threshold (GHI > 10): should alert
+    bright_flag = 12.0 <= IrrCfg.min_alert_irradiance_wm2
+    health_bright = evaluator.evaluate(
+        MockModbusReader(base_readings, evaluator.log).read_all(),
+        dark_irradiance=bright_flag,
+        sun_elevation_deg=10.0,  # day
+    )
+    assert not health_bright.system_ok
+    assert not health_bright.per_inverter["INV-A"].inverter_ok
