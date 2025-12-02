@@ -310,11 +310,17 @@ def main():
 
         health = None
         sun_el = weather_estimate.snapshot.sun_elevation_deg if weather_estimate else None
+        irradiance_wm2 = weather_estimate.snapshot.ghi_wm2 if weather_estimate else None
+        dark_irradiance = (
+            irradiance_wm2 is not None
+            and irradiance_wm2 <= app_cfg.health.min_alert_irradiance_wm2
+        )
         if snapshot_items:
             health = evaluator.evaluate(
                 snapshot_map,
                 low_light_grace=daylight_info.in_grace_window,
                 sun_elevation_deg=sun_el,
+                dark_irradiance=dark_irradiance,
             )
 
         optimizer_mismatches: list[tuple[str, int, int | None]] = []

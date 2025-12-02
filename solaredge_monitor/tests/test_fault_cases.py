@@ -12,6 +12,7 @@ class DummyCfg:
     low_pac_threshold = 10
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
+    min_alert_irradiance_wm2 = 1.0
 
 
 def _mk_evaluator():
@@ -163,3 +164,41 @@ def test_inverter_offline():
     assert not health.system_ok
     assert not health.per_inverter["INV-B"].inverter_ok
     assert "offline" in health.per_inverter["INV-B"].reason.lower()
+
+
+# ---------------------------------------------------------------------------
+# 7. Low irradiance suppression should allow sleeping/low-Vdc without alerts
+# ---------------------------------------------------------------------------
+
+def test_dark_irradiance_suppresses_sleeping_and_low_vdc():
+    evaluator = _mk_evaluator()
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 2, "pac_w": 0, "vdc_v": 0},   # sleeping
+        "INV-B": {"status": 4, "pac_w": 0, "vdc_v": 20},  # producing but dark
+    }, evaluator.log)
+
+    health = evaluator.evaluate(reader.read_all(), dark_irradiance=True)
+
+    assert health.system_ok
+    assert health.per_inverter["INV-A"].inverter_ok
+    assert health.per_inverter["INV-B"].inverter_ok
+
+
+# ---------------------------------------------------------------------------
+# 8. Faults should still alert even when irradiance is zero
+# ---------------------------------------------------------------------------
+
+def test_dark_irradiance_does_not_hide_fault_state():
+    evaluator = _mk_evaluator()
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 7, "pac_w": 0, "vdc_v": 0},  # Fault
+        "INV-B": {"status": 2, "pac_w": 0, "vdc_v": 0},
+    }, evaluator.log)
+
+    health = evaluator.evaluate(reader.read_all(), dark_irradiance=True)
+
+    assert not health.system_ok
+    assert not health.per_inverter["INV-A"].inverter_ok
+    assert health.per_inverter["INV-B"].inverter_ok

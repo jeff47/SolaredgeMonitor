@@ -19,7 +19,7 @@ Edit `solaredge_monitor.conf` to define your environment:
 - `[daylight]`: Timezone plus optional coordinates/sunrise/sunset windows.
 - `[modbus]` & `[inverter:NAME]`: Global Modbus settings and per-inverter host/port/unit.
 - `[pushover]`, `[healthchecks]`: Enable flags and credentials for each notifier.
-- `[health]`: Thresholds for peer comparison, low PAC/Vdc checks, etc. Includes `min_alert_sun_el_deg` to suppress low-PAC alerts when sun elevation is below this angle (e.g., 6.0° to ignore dawn/low-angle zeros).
+- `[health]`: Thresholds for peer comparison, low PAC/Vdc checks, etc. Includes `min_alert_sun_el_deg` (suppress low-PAC alerts when sun elevation is below this angle, e.g., 6.0°) and `min_alert_irradiance_wm2` to suppress “sleeping/low Vdc at dawn” alerts when GHI is effectively zero.
 - `[solaredge_api]`: Enable flag, API key/site ID, and optional night skipping.
 - `[weather]`: Optional Open-Meteo settings (enable flag, coordinates or fallback to `[daylight]`, tilt/azimuth/albedo, array kW DC, AC capacity, derate, NOCT, temp coefficient) to show expected per-inverter output vs. weather and optionally append JSONL rows (`log_path`) for tuning.
 - `[logging]`: Console log level/quiet/debug module overrides plus optional structured JSONL logging (`structured_enabled` + `structured_path`).

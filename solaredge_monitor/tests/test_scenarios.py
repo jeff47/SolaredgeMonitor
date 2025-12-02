@@ -15,6 +15,7 @@ class DummyCfg:
     low_pac_threshold = 10
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
+    min_alert_irradiance_wm2 = 1.0
 
 def _eval(values):
     """Helper: run evaluation on a dict of inverter->value mappings."""

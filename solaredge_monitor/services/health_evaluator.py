@@ -40,6 +40,7 @@ class HealthEvaluator:
         reading: Optional[InverterSnapshot],
         *,
         sun_elevation_deg: float | None = None,
+        dark_irradiance: bool = False,
     ) -> InverterHealth:
         """Evaluate a single inverter from its Modbus reading."""
         if reading is None:
@@ -57,10 +58,17 @@ class HealthEvaluator:
         # Abnormal statuses (ALWAYS unhealthy)
         # ---------------------------------------
         if status in (2, 3, 6):   # Sleeping, Starting, Shutting Down
+            if not dark_irradiance:
+                return InverterHealth(
+                    name=name,
+                    inverter_ok=False,
+                    reason=f"Unexpected inverter status: {status_str}",
+                    reading=reading,
+                )
             return InverterHealth(
                 name=name,
-                inverter_ok=False,
-                reason=f"Unexpected inverter status: {status_str}",
+                inverter_ok=True,
+                reason=None,
                 reading=reading,
             )
 
@@ -82,6 +90,7 @@ class HealthEvaluator:
         min_alert_sun_el_deg = self.cfg.min_alert_sun_el_deg
         if (
             status == 4
+            and not dark_irradiance
             and low_pac_threshold is not None
             and reading.pac_w is not None
             and reading.pac_w < low_pac_threshold
@@ -107,6 +116,7 @@ class HealthEvaluator:
         low_vdc_threshold = self.cfg.low_vdc_threshold
         if (
             low_vdc_threshold is not None
+            and not dark_irradiance
             and reading.vdc_v is not None
             and reading.vdc_v < low_vdc_threshold
         ):
@@ -200,19 +210,27 @@ class HealthEvaluator:
         readings: Dict[str, InverterSnapshot],
         low_light_grace: bool = False,
         sun_elevation_deg: float | None = None,
+        dark_irradiance: bool = False,
     ) -> SystemHealth:
         # --------------------------------------------------------------
         # 1. FIRST: per-inverter checks (never skipped)
         # --------------------------------------------------------------
         per_inverter = {
-            name: self.evaluate_inverter(name, reading, sun_elevation_deg=sun_elevation_deg)
+            name: self.evaluate_inverter(
+                name,
+                reading,
+                sun_elevation_deg=sun_elevation_deg,
+                dark_irradiance=dark_irradiance,
+            )
             for name, reading in readings.items()
         }
 
         # If any inverter has a NON-producing status (2,3,5,6,7),
         # low-light/cloudy logic must NOT override it.
         abnormal_status_present = any(
-            inv.reading and inv.reading.status not in (4,)
+            inv.reading
+            and inv.reading.status not in (4,)
+            and not (dark_irradiance and inv.reading.status in (2, 3, 6))
             for inv in per_inverter.values()
         )
 

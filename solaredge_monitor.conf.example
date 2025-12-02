@@ -62,6 +62,7 @@ low_light_peer_skip_threshold = 20   # Treat both inverters < this as low light
 low_pac_threshold = 10               # Flag producing inverters below this PAC (W)
 low_vdc_threshold = 50               # Flag Vdc below this (V)
 min_alert_sun_el_deg = 6.0          # Suppress low-PAC alerts below this sun elevation (deg)
+min_alert_irradiance_wm2 = 1.0      # Suppress sleep/low-Vdc alerts if GHI <= this (W/m^2)
 
 [solaredge_api]
 # Enable and provide API credentials to fetch optimizer counts/site data

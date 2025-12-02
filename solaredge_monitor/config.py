@@ -46,6 +46,7 @@ class HealthConfig:
     low_pac_threshold: float = 10.0
     low_vdc_threshold: float = 50.0
     min_alert_sun_el_deg: float | None = None
+    min_alert_irradiance_wm2: float = 1.0
 
 
 @dataclass
@@ -245,6 +246,8 @@ class Config:
                 health_kwargs["low_vdc_threshold"] = float(health_sec["low_vdc_threshold"])
             if "min_alert_sun_el_deg" in health_sec:
                 health_kwargs["min_alert_sun_el_deg"] = float(health_sec["min_alert_sun_el_deg"])
+            if "min_alert_irradiance_wm2" in health_sec:
+                health_kwargs["min_alert_irradiance_wm2"] = float(health_sec["min_alert_irradiance_wm2"])
         health_cfg = HealthConfig(**health_kwargs)
 
         # --- Daylight ---
