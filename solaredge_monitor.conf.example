@@ -60,6 +60,7 @@ peer_ratio_threshold = 0.20          # Min low/high PAC ratio to avoid peer aler
 min_production_for_peer_check = 0.5  # % of AC capacity; skip peer check if all inverters below this
 low_light_peer_skip_threshold = 0.2  # % of AC capacity; treat both inverters < this as low light
 low_pac_threshold = 1.0              # % of AC capacity; flag producing inverters below this PAC
+consecutive_health_alerts = 1        # Require this many consecutive failures before alerting; resets on a healthy reading
 low_vdc_threshold = 50               # Flag Vdc below this (V)
 min_alert_sun_el_deg = 6.0          # Suppress low-PAC alerts below this sun elevation (deg)
 alert_irradiance_floor_wm2 = 30.0    # Suppress PAC/ sleep/low-Vdc alerts when GHI/POA <= this (W/m^2)

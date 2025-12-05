@@ -334,7 +334,11 @@ def main():
         se_client = SolarEdgeAPIClient(app_cfg.solaredge_api, log)
 
     summary_service = DailySummaryService(app_cfg.modbus.inverters, se_client, log, state=state)
-    alert_manager = AlertStateManager(log)
+    alert_manager = AlertStateManager(
+        log,
+        state=state,
+        consecutive_required=app_cfg.health.consecutive_health_alerts,
+    )
     weather_client = WeatherClient(app_cfg.weather, log)
 
     if args.command in {"health", "simulate"}:

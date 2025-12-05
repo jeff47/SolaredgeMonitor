@@ -55,6 +55,7 @@ class HealthConfig:
     min_production_for_peer_check: float = 0.5   # percent of AC capacity
     low_light_peer_skip_threshold: float = 0.2   # percent of AC capacity
     low_pac_threshold: float = 1.0               # percent of AC capacity
+    consecutive_health_alerts: int = 1           # consecutive failures required before alerting
     low_vdc_threshold: float = 50.0
     min_alert_sun_el_deg: float | None = None
     alert_irradiance_floor_wm2: float | None = 30.0
@@ -262,6 +263,8 @@ class Config:
                 health_kwargs["low_light_peer_skip_threshold"] = float(health_sec["low_light_peer_skip_threshold"])
             if "low_pac_threshold" in health_sec:
                 health_kwargs["low_pac_threshold"] = float(health_sec["low_pac_threshold"])
+            if "consecutive_health_alerts" in health_sec:
+                health_kwargs["consecutive_health_alerts"] = int(health_sec["consecutive_health_alerts"])
             if "low_vdc_threshold" in health_sec:
                 health_kwargs["low_vdc_threshold"] = float(health_sec["low_vdc_threshold"])
             if "min_alert_sun_el_deg" in health_sec:
