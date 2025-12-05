@@ -24,6 +24,9 @@ from .services.simulation_api_client import SimulationAPIClient
 from .services import state_maintenance
 from .services.weather_client import WeatherClient
 
+from .models.inverter import InverterSnapshot
+from .models.weather import WeatherEstimate
+
 
 def _log_weather_jsonl(path: str, run_ts, weather_estimate, snapshot_map, log) -> None:
     """Temporary JSONL logger for model tuning; safe to remove when no longer needed."""
@@ -76,6 +79,92 @@ def _log_weather_jsonl(path: str, run_ts, weather_estimate, snapshot_map, log) -
                 fh.write(json.dumps(row) + "\n")
     except Exception as exc:  # pragma: no cover - non-critical logging
         log.debug("Weather tuning log skipped: %s", exc)
+
+
+def _build_capacity_map(app_cfg, weather_estimate: WeatherEstimate | None) -> dict[str, float]:
+    """Resolve per-inverter AC capacity (kW) from config/weather data."""
+    caps: dict[str, float] = {}
+    for inv_cfg in app_cfg.modbus.inverters:
+        if inv_cfg.ac_capacity_kw is not None:
+            caps[inv_cfg.name] = inv_cfg.ac_capacity_kw
+
+    if weather_estimate and weather_estimate.per_inverter:
+        for name, inv in weather_estimate.per_inverter.items():
+            if name not in caps and inv.ac_capacity_kw is not None:
+                caps[name] = inv.ac_capacity_kw
+
+    return caps
+
+
+def _compute_pac_alert_suppression(
+    snapshot_map: dict[str, InverterSnapshot] | None,
+    weather_estimate: WeatherEstimate | None,
+    health_cfg,
+    log,
+    thresholds,
+) -> dict[str, bool]:
+    """Build a per-inverter map for when to skip low-PAC alerts based on weather/expectations."""
+    if not snapshot_map:
+        return {}
+
+    low_pac_by_inv = thresholds.low_pac_w if thresholds else {}
+    expected_ac_by_inv: dict[str, float] = {}
+    poa_values = []
+    ghi = None
+    precip_suppressed = False
+
+    if weather_estimate:
+        snap = weather_estimate.snapshot
+        ghi = snap.ghi_wm2
+
+        codes = set(health_cfg.precip_weather_codes or ())
+        if (
+            snap.cloud_cover_pct is not None
+            and snap.cloud_cover_pct >= health_cfg.precip_cloud_cover_pct
+            and snap.weather_code is not None
+            and snap.weather_code in codes
+        ):
+            precip_suppressed = True
+
+        for name, inv in weather_estimate.per_inverter.items():
+            if inv.expected_ac_kw is not None:
+                expected_ac_by_inv[name] = inv.expected_ac_kw * 1000.0
+            if inv.poa_wm2 is not None:
+                poa_values.append(inv.poa_wm2)
+
+    poa_max = max(poa_values) if poa_values else None
+    irr_floor = health_cfg.alert_irradiance_floor_wm2
+    irradiance_below_floor = False
+    if irr_floor is not None:
+        irr_candidates = [v for v in (ghi, poa_max) if v is not None]
+        if irr_candidates and max(irr_candidates) <= irr_floor:
+            irradiance_below_floor = True
+
+    suppression: dict[str, bool] = {}
+    for name in snapshot_map.keys():
+        expected_w = expected_ac_by_inv.get(name)
+        pac_floor = low_pac_by_inv.get(name)
+        expected_below_floor = (
+            pac_floor is not None
+            and expected_w is not None
+            and expected_w <= pac_floor
+        )
+        suppression[name] = (
+            irradiance_below_floor
+            or precip_suppressed
+            or expected_below_floor
+        )
+
+    if any(suppression.values()):
+        log.debug(
+            "PAC alert suppression applied: irradiance_low=%s, precip=%s, pac_floor=%s, expected_ac_w=%s",
+            irradiance_below_floor,
+            precip_suppressed,
+            pac_floor,
+            {k: expected_ac_by_inv.get(k) for k, v in suppression.items()},
+        )
+
+    return suppression
 
 
 def _parse_simulated_time(raw: str | None, tz, log):
@@ -311,16 +400,30 @@ def main():
         health = None
         sun_el = weather_estimate.snapshot.sun_elevation_deg if weather_estimate else None
         irradiance_wm2 = weather_estimate.snapshot.ghi_wm2 if weather_estimate else None
+        irr_floor = app_cfg.health.alert_irradiance_floor_wm2
         dark_irradiance = (
-            irradiance_wm2 is not None
-            and irradiance_wm2 <= app_cfg.health.min_alert_irradiance_wm2
+            irr_floor is not None
+            and irradiance_wm2 is not None
+            and irradiance_wm2 <= irr_floor
         )
+        capacity_map = _build_capacity_map(app_cfg, weather_estimate) if snapshot_map else {}
+        thresholds = evaluator.derive_thresholds(snapshot_map.keys(), capacity_map) if snapshot_map else None
+        pac_alert_suppression = _compute_pac_alert_suppression(
+            snapshot_map,
+            weather_estimate,
+            app_cfg.health,
+            log,
+            thresholds,
+        ) if snapshot_map else {}
         if snapshot_items:
             health = evaluator.evaluate(
                 snapshot_map,
                 low_light_grace=daylight_info.in_grace_window,
                 sun_elevation_deg=sun_el,
                 dark_irradiance=dark_irradiance,
+                capacity_by_name=capacity_map,
+                thresholds=thresholds,
+                pac_alert_suppression=pac_alert_suppression or None,
             )
 
         optimizer_mismatches: list[tuple[str, int, int | None]] = []

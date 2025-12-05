@@ -17,12 +17,12 @@ CASES_DIR = Path(__file__).with_name("golden_cases")
 
 class DummyCfg:
     peer_ratio_threshold = 0.60
-    min_production_for_peer_check = 200
-    low_light_peer_skip_threshold = 20
-    low_pac_threshold = 10
+    min_production_for_peer_check = 0.5
+    low_light_peer_skip_threshold = 0.2
+    low_pac_threshold = 1.0
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
-    min_alert_irradiance_wm2 = 1.0
+    alert_irradiance_floor_wm2 = 30.0
 
 
 def _load_cases():
@@ -45,7 +45,8 @@ def _load_cases():
 def test_golden_cases(case):
     evaluator = HealthEvaluator(DummyCfg(), LOG)
     reader = MockModbusReader(case["readings"], LOG)
-    health = evaluator.evaluate(reader.read_all())
+    capacities = {name: 1.0 for name in case["readings"].keys()}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=capacities)
 
     expected = case["expected"]
     assert health.system_ok == expected["system_ok"], case.get("description")

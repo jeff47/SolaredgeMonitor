@@ -6,7 +6,7 @@ This project polls SolarEdge inverters over Modbus, combines the readings with S
 
 - **Modbus health checks**: Reads configured inverters, evaluates per-inverter rules plus peer comparisons, and reports alerts.
 - **SolarEdge API integration**: Pulls status/optimizer counts from the cloud when enabled, enriching alerts and summaries.
-- **Weather context (optional)**: Fetches Open-Meteo irradiance/temp/cloud cover to show per-inverter expected output alongside real readings (info-only by default; optional JSONL logging for tuning).
+- **Weather context (optional)**: Fetches Open-Meteo irradiance/temp/cloud cover to show per-inverter expected output alongside real readings and applies weather-aware alert suppression (irradiance floor + precip gate).
 - **Daylight-aware polling**: A daylight policy decides whether to skip Modbus/cloud calls at night and when summaries should run.
 - **Simulation mode**: Use `[simulation]` config sections or `simulate --scenario NAME` to test alert logic with synthetic data and timestamps.
 - **SQLite history**: Per-run snapshots, optimizer counts, and site summaries are stored in `~/.solaredge_monitor_state.db` (or the path you specify).
@@ -19,13 +19,17 @@ Edit `solaredge_monitor.conf` to define your environment:
 - `[daylight]`: Timezone plus optional coordinates/sunrise/sunset windows.
 - `[modbus]` & `[inverter:NAME]`: Global Modbus settings and per-inverter host/port/unit.
 - `[pushover]`, `[healthchecks]`: Enable flags and credentials for each notifier.
-- `[health]`: Thresholds for peer comparison, low PAC/Vdc checks, etc. Includes `min_alert_sun_el_deg` (suppress low-PAC alerts when sun elevation is below this angle, e.g., 6.0°) and `min_alert_irradiance_wm2` to suppress “sleeping/low Vdc at dawn” alerts when GHI is effectively zero.
+- `[health]`: Thresholds for peer comparison, low PAC/Vdc checks, etc. PAC/peer thresholds are configured as % of AC capacity (e.g., `low_pac_threshold = 1.0` → 1% of capacity). Includes `min_alert_sun_el_deg` (suppress low-PAC alerts when sun elevation is below this angle, e.g., 6.0°), a single irradiance floor `alert_irradiance_floor_wm2` (suppresses PAC/sleep/low-Vdc alerts when GHI/POA is below this), and weather gates (`precip_weather_codes`, `precip_cloud_cover_pct`) that suppress PAC alerts when it’s 100% cloudy with precipitation.
 - `[solaredge_api]`: Enable flag, API key/site ID, and optional night skipping.
 - `[weather]`: Optional Open-Meteo settings (enable flag, coordinates or fallback to `[daylight]`, tilt/azimuth/albedo, array kW DC, AC capacity, derate, NOCT, temp coefficient) to show expected per-inverter output vs. weather and optionally append JSONL rows (`log_path`) for tuning.
 - `[logging]`: Console log level/quiet/debug module overrides plus optional structured JSONL logging (`structured_enabled` + `structured_path`).
 - `[state]`: Path to the SQLite database (`~/.solaredge_monitor_state.db` by default).
 - `[simulation]` and `[simulation:scenario]`: Lists of inverters plus per-field overrides (PAC/Vdc/total_wh/optimizers). Include `simulated_time` to force a specific timestamp.
 - `[retention]`: `snapshot_days`, `summary_days`, and `vacuum_after_prune` control how `maintain-db` prunes the DB.
+
+## Changelog
+
+See `CHANGELOG.md` for recent changes and defaults.
 
 ## CLI Commands
 

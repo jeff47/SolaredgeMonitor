@@ -57,12 +57,14 @@ ping_url =                      # Healthchecks ping URL
 [health]
 # Thresholds for peer comparisons and low PAC/Vdc detection
 peer_ratio_threshold = 0.20          # Min low/high PAC ratio to avoid peer alert
-min_production_for_peer_check = 50   # Skip peer check below this PAC (W)
-low_light_peer_skip_threshold = 20   # Treat both inverters < this as low light
-low_pac_threshold = 10               # Flag producing inverters below this PAC (W)
+min_production_for_peer_check = 0.5  # % of AC capacity; skip peer check if all inverters below this
+low_light_peer_skip_threshold = 0.2  # % of AC capacity; treat both inverters < this as low light
+low_pac_threshold = 1.0              # % of AC capacity; flag producing inverters below this PAC
 low_vdc_threshold = 50               # Flag Vdc below this (V)
 min_alert_sun_el_deg = 6.0          # Suppress low-PAC alerts below this sun elevation (deg)
-min_alert_irradiance_wm2 = 1.0      # Suppress sleep/low-Vdc alerts if GHI <= this (W/m^2)
+alert_irradiance_floor_wm2 = 30.0    # Suppress PAC/ sleep/low-Vdc alerts when GHI/POA <= this (W/m^2)
+precip_cloud_cover_pct = 100.0       # Require this cloud cover to treat precip codes as auto-suppress
+precip_weather_codes = 51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,99  # Open-Meteo precip codes
 
 [solaredge_api]
 # Enable and provide API credentials to fetch optimizer counts/site data

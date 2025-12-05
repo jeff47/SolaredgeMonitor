@@ -4,6 +4,17 @@ from pathlib import Path
 import configparser
 
 
+# Open-Meteo weather codes that imply precipitation (rain/snow/thunder)
+DEFAULT_PRECIP_WEATHER_CODES: tuple[int, ...] = (
+    51, 53, 55, 56, 57,  # Drizzle / freezing drizzle
+    61, 63, 65, 66, 67,  # Rain / freezing rain
+    71, 73, 75, 77,      # Snow / snow grains
+    80, 81, 82,          # Rain showers
+    85, 86,              # Snow showers
+    95, 96, 99,          # Thunderstorms
+)
+
+
 @dataclass
 class InverterConfig:
     name: str
@@ -41,12 +52,14 @@ class HealthchecksConfig:
 @dataclass
 class HealthConfig:
     peer_ratio_threshold: float = 0.20
-    min_production_for_peer_check: float = 50.0
-    low_light_peer_skip_threshold: float = 20.0
-    low_pac_threshold: float = 10.0
+    min_production_for_peer_check: float = 0.5   # percent of AC capacity
+    low_light_peer_skip_threshold: float = 0.2   # percent of AC capacity
+    low_pac_threshold: float = 1.0               # percent of AC capacity
     low_vdc_threshold: float = 50.0
     min_alert_sun_el_deg: float | None = None
-    min_alert_irradiance_wm2: float = 1.0
+    alert_irradiance_floor_wm2: float | None = 30.0
+    precip_weather_codes: tuple[int, ...] = DEFAULT_PRECIP_WEATHER_CODES
+    precip_cloud_cover_pct: float = 100.0
 
 
 @dataclass
@@ -163,6 +176,13 @@ class Config:
                 return None
             return float(raw)
 
+        def _parse_int_list(raw: str | None) -> tuple[int, ...]:
+            if raw is None:
+                return tuple()
+            parts = [p.strip() for p in raw.split(",")]
+            ints = [int(p) for p in parts if p]
+            return tuple(ints)
+
         # --- Modbus ---
         inverters: list[InverterConfig] = []
         if "modbus" not in p:
@@ -246,8 +266,13 @@ class Config:
                 health_kwargs["low_vdc_threshold"] = float(health_sec["low_vdc_threshold"])
             if "min_alert_sun_el_deg" in health_sec:
                 health_kwargs["min_alert_sun_el_deg"] = float(health_sec["min_alert_sun_el_deg"])
-            if "min_alert_irradiance_wm2" in health_sec:
-                health_kwargs["min_alert_irradiance_wm2"] = float(health_sec["min_alert_irradiance_wm2"])
+            if "alert_irradiance_floor_wm2" in health_sec:
+                health_kwargs["alert_irradiance_floor_wm2"] = float(health_sec["alert_irradiance_floor_wm2"])
+            if "precip_cloud_cover_pct" in health_sec:
+                health_kwargs["precip_cloud_cover_pct"] = float(health_sec["precip_cloud_cover_pct"])
+            if "precip_weather_codes" in health_sec:
+                codes = _parse_int_list(health_sec["precip_weather_codes"])
+                health_kwargs["precip_weather_codes"] = codes or DEFAULT_PRECIP_WEATHER_CODES
         health_cfg = HealthConfig(**health_kwargs)
 
         # --- Daylight ---

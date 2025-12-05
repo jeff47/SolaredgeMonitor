@@ -88,8 +88,8 @@ class IntegrationTestHarness:
         self.log = get_logger(log_name)
         self.health_cfg = health_cfg or HealthConfig(
             peer_ratio_threshold=0.60,
-            min_production_for_peer_check=200,
-            low_light_peer_skip_threshold=20,
+            min_production_for_peer_check=2.0,
+            low_light_peer_skip_threshold=0.2,
         )
         self.evaluator = HealthEvaluator(self.health_cfg, self.log)
 
@@ -100,8 +100,9 @@ class IntegrationTestHarness:
 
         reader = MockModbusReader(scenario.values, self.log)
         snapshots = reader.read_all()
+        capacities = {name: 1.0 for name in snapshots.keys()}
 
-        health = self.evaluator.evaluate(snapshots)
+        health = self.evaluator.evaluate(snapshots, capacity_by_name=capacities)
         alerts = evaluate_alerts(health, now)
 
         return IntegrationResult(

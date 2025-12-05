@@ -7,12 +7,12 @@ from solaredge_monitor.logging import ConsoleLog, get_logger
 
 class DummyCfg:
     peer_ratio_threshold = 0.6          # If one inverter <60% of peer → fault
-    min_production_for_peer_check = 200 # Skip peer check if both below this
-    low_light_peer_skip_threshold = 20   # Peer checks skipped under this PAC
-    low_pac_threshold = 10
+    min_production_for_peer_check = 2.0  # percent of AC capacity (e.g., 20 W @ 1 kW)
+    low_light_peer_skip_threshold = 0.2  # percent of AC capacity (e.g., 2 W @ 1 kW)
+    low_pac_threshold = 1.0              # percent of AC capacity (e.g., 10 W @ 1 kW)
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
-    min_alert_irradiance_wm2 = 1.0
+    alert_irradiance_floor_wm2 = 30.0
 
 
 def _mk_evaluator():
@@ -32,7 +32,8 @@ def test_status_mismatch():
         "INV-B": {"status": 2, "pac_w": 0,   "vdc_v": 410},  # sleeping
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all())
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=caps)
 
     assert not health.system_ok
     assert not health.per_inverter["INV-B"].inverter_ok
@@ -51,7 +52,8 @@ def test_peer_mismatch_low_production_outlier():
         "INV-B": {"status": 4, "pac_w": 200,  "vdc_v": 390},  # < ratio threshold
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all())
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=caps)
 
     assert not health.system_ok
     assert not health.per_inverter["INV-B"].inverter_ok
@@ -70,11 +72,29 @@ def test_low_pac_producing():
         "INV-B": {"status": 4, "pac_w": 900, "vdc_v": 395},
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all())
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=caps)
 
     assert not health.system_ok
     assert not health.per_inverter["INV-A"].inverter_ok
     assert "PAC" in health.per_inverter["INV-A"].reason
+
+
+def test_low_pac_suppressed_by_weather_gate():
+    evaluator = _mk_evaluator()
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 4, "pac_w": 4, "vdc_v": 395},
+    }, evaluator.log)
+
+    health = evaluator.evaluate(
+        reader.read_all(),
+        capacity_by_name={"INV-A": 10.0, "INV-B": 10.0},
+        pac_alert_suppression={"INV-A": True},
+    )
+
+    assert health.system_ok
+    assert health.per_inverter["INV-A"].inverter_ok
 
 
 # ---------------------------------------------------------------------------
@@ -85,11 +105,12 @@ def test_both_low_pac_environmental_skip_peer_check():
     evaluator = _mk_evaluator()
 
     reader = MockModbusReader({
-        "INV-A": {"status": 4, "pac_w": 50, "vdc_v": 400},
-        "INV-B": {"status": 4, "pac_w": 40, "vdc_v": 390},
+        "INV-A": {"status": 4, "pac_w": 150, "vdc_v": 400},
+        "INV-B": {"status": 4, "pac_w": 140, "vdc_v": 390},
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all())
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=caps)
 
     # Should NOT flag peer mismatch because both below min_production_for_peer_check
     assert health.system_ok
@@ -107,7 +128,8 @@ def test_low_vdc():
         "INV-B": {"status": 4, "pac_w": 650, "vdc_v": 380},
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all())
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=caps)
 
     assert not health.system_ok
     assert not health.per_inverter["INV-A"].inverter_ok
@@ -159,7 +181,8 @@ def test_inverter_offline():
 
     reader.read_all = read_all_override
 
-    health = evaluator.evaluate(reader.read_all())
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), capacity_by_name=caps)
 
     assert not health.system_ok
     assert not health.per_inverter["INV-B"].inverter_ok
@@ -178,7 +201,8 @@ def test_dark_irradiance_suppresses_sleeping_and_low_vdc():
         "INV-B": {"status": 4, "pac_w": 0, "vdc_v": 20},  # producing but dark
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all(), dark_irradiance=True)
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), dark_irradiance=True, capacity_by_name=caps)
 
     assert health.system_ok
     assert health.per_inverter["INV-A"].inverter_ok
@@ -197,7 +221,8 @@ def test_dark_irradiance_does_not_hide_fault_state():
         "INV-B": {"status": 2, "pac_w": 0, "vdc_v": 0},
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all(), dark_irradiance=True)
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), dark_irradiance=True, capacity_by_name=caps)
 
     assert not health.system_ok
     assert not health.per_inverter["INV-A"].inverter_ok
@@ -220,7 +245,8 @@ def test_low_sun_angle_suppresses_sleeping_status():
         "INV-B": {"status": 6, "pac_w": 0, "vdc_v": 0},
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all(), sun_elevation_deg=0.5)
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), sun_elevation_deg=0.5, capacity_by_name=caps)
 
     assert health.system_ok
     assert health.per_inverter["INV-A"].inverter_ok
@@ -242,7 +268,8 @@ def test_low_sun_angle_suppresses_starting_status():
         "INV-A": {"status": 3, "pac_w": 0, "vdc_v": 0},  # Starting
     }, evaluator.log)
 
-    health = evaluator.evaluate(reader.read_all(), sun_elevation_deg=0.2)
+    caps = {"INV-A": 1.0}
+    health = evaluator.evaluate(reader.read_all(), sun_elevation_deg=0.2, capacity_by_name=caps)
 
     assert health.system_ok
     assert health.per_inverter["INV-A"].inverter_ok
@@ -252,9 +279,9 @@ def test_low_sun_angle_suppresses_starting_status():
 # 11. GHI-derived dark_irradiance should suppress sleeping but not when above threshold
 # ---------------------------------------------------------------------------
 
-def test_ghi_threshold_controls_dark_irradiance_gate():
+def test_irradiance_floor_controls_dark_irradiance_gate():
     class IrrCfg(DummyCfg):
-        min_alert_irradiance_wm2 = 10.0
+        alert_irradiance_floor_wm2 = 10.0
         min_alert_sun_el_deg = None
 
     ConsoleLog(level="INFO", quiet=True).setup()
@@ -265,21 +292,24 @@ def test_ghi_threshold_controls_dark_irradiance_gate():
     }
 
     # Below threshold (GHI <= 10): should suppress alert
-    dark_flag = 5.0 <= IrrCfg.min_alert_irradiance_wm2
+    dark_flag = 5.0 <= IrrCfg.alert_irradiance_floor_wm2
+    caps = {"INV-A": 1.0}
     health_dark = evaluator.evaluate(
         MockModbusReader(base_readings, evaluator.log).read_all(),
         dark_irradiance=dark_flag,
         sun_elevation_deg=10.0,  # day
+        capacity_by_name=caps,
     )
     assert health_dark.system_ok
     assert health_dark.per_inverter["INV-A"].inverter_ok
 
     # Above threshold (GHI > 10): should alert
-    bright_flag = 12.0 <= IrrCfg.min_alert_irradiance_wm2
+    bright_flag = 12.0 <= IrrCfg.alert_irradiance_floor_wm2
     health_bright = evaluator.evaluate(
         MockModbusReader(base_readings, evaluator.log).read_all(),
         dark_irradiance=bright_flag,
         sun_elevation_deg=10.0,  # day
+        capacity_by_name=caps,
     )
     assert not health_bright.system_ok
     assert not health_bright.per_inverter["INV-A"].inverter_ok

@@ -10,12 +10,12 @@ from solaredge_monitor.config import InverterConfig
 # Minimal health config for evaluator
 class DummyCfg:
     peer_ratio_threshold = 0.60
-    min_production_for_peer_check = 200
-    low_light_peer_skip_threshold = 20
-    low_pac_threshold = 10
+    min_production_for_peer_check = 0.5
+    low_light_peer_skip_threshold = 0.2
+    low_pac_threshold = 1.0
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
-    min_alert_irradiance_wm2 = 1.0
+    alert_irradiance_floor_wm2 = 30.0
 
 def _eval(values):
     """Helper: run evaluation on a dict of inverter->value mappings."""
@@ -23,7 +23,8 @@ def _eval(values):
     log = get_logger("test")
     evaluator = HealthEvaluator(DummyCfg(), log)
     reader = MockModbusReader(values, log)
-    return evaluator.evaluate(reader.read_all())
+    capacities = {name: 1.0 for name in values.keys()}
+    return evaluator.evaluate(reader.read_all(), capacity_by_name=capacities)
 
 
 # ------------------------------------------------------------------------------
@@ -248,7 +249,8 @@ def test_peer_below_threshold():
         "A": {"status": 4, "pac_w": 11, "vdc_v": 350},
         "B": {"status": 4, "pac_w": 1,  "vdc_v": 350},
     })
-    assert health.system_ok
+    assert not health.system_ok
+    assert not health.per_inverter["B"].inverter_ok
 
 
 def test_both_low_pac_cloudy():
@@ -256,7 +258,9 @@ def test_both_low_pac_cloudy():
         "A": {"status": 4, "pac_w": 5, "vdc_v": 350},
         "B": {"status": 4, "pac_w": 4, "vdc_v": 350},
     })
-    assert health.system_ok
+    assert not health.system_ok
+    assert not health.per_inverter["A"].inverter_ok
+    assert not health.per_inverter["B"].inverter_ok
 
 def test_one_low_one_high_fault():
     health = _eval({
@@ -270,7 +274,8 @@ def test_low_light_asymmetry_still_ok():
         "A": {"status": 4, "pac_w": 12, "vdc_v": 350},
         "B": {"status": 4, "pac_w": 1,  "vdc_v": 350},
     })
-    assert health.system_ok
+    assert not health.system_ok
+    assert not health.per_inverter["B"].inverter_ok
 
 def test_midrange_asymmetry_should_fail():
     health = _eval({
@@ -289,7 +294,8 @@ def test_optimizer_count_mismatch_flags_inverter():
         "B": {"status": 4, "pac_w": 850, "vdc_v": 378},
     }, log)
     snapshots = reader.read_all()
-    health = evaluator.evaluate(snapshots)
+    capacities = {name: 10.0 for name in snapshots.keys()}
+    health = evaluator.evaluate(snapshots, capacity_by_name=capacities)
     assert health.system_ok
 
     serial_by_name = {

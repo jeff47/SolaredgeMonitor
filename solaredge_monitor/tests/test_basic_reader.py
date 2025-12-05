@@ -8,12 +8,12 @@ from solaredge_monitor.logging import ConsoleLog, get_logger
 # Minimal config object for HealthEvaluator
 class DummyCfg:
     peer_ratio_threshold = 0.6
-    min_production_for_peer_check = 200
-    low_light_peer_skip_threshold = 20
-    low_pac_threshold = 10
+    min_production_for_peer_check = 0.5
+    low_light_peer_skip_threshold = 0.2
+    low_pac_threshold = 1.0
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
-    min_alert_irradiance_wm2 = 1.0
+    alert_irradiance_floor_wm2 = 30.0
 
 
 def test_basic_reader_and_health():
@@ -30,6 +30,7 @@ def test_basic_reader_and_health():
 
     # Read from mock
     readings = reader.read_all()
+    capacities = {name: 1.0 for name in readings}
 
     # Basic sanity checks
     assert "INV-A" in readings
@@ -37,7 +38,7 @@ def test_basic_reader_and_health():
     assert readings["INV-A"].pac_w == 1500
 
     # Evaluate health
-    health = evaluator.evaluate(readings)
+    health = evaluator.evaluate(readings, capacity_by_name=capacities)
 
     # Expectations:
     #  - both producing above threshold
