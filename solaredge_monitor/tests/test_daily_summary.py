@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 from solaredge_monitor.config import InverterConfig
@@ -52,7 +51,6 @@ def test_daily_summary_runs_once(tmp_path):
             raw={},
         ),
     ]
-    per_inv = {"INV-A-123": 2000.0, "INV-B-456": 1500.0}
     api = FakeApi(site_wh=None, per_inv={}, inventory=inventory, enabled=False)
     state_path = tmp_path / "state.json"
     state = AppState(path=state_path)

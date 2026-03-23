@@ -12,6 +12,11 @@ def main() -> None:
     log = ConsoleLog(level="DEBUG", quiet=False).setup()
     cfg = Config.load("solaredge_monitor.conf")
     client = SolarEdgeAPIClient(cfg.solaredge_api, log)
+    expectations = {
+        inv.name: inv.expected_optimizers
+        for inv in cfg.modbus.inverters
+        if inv.expected_optimizers is not None
+    }
 
     print("Enabled?", client.enabled)
 
@@ -29,7 +34,7 @@ def main() -> None:
     energy = client.get_daily_production(date.today())
     print("Today's energy:", energy)
 
-    print("Optimizer alerts:", client.check_optimizer_expectations(inventory))
+    print("Optimizer alerts:", client.check_optimizer_expectations(expectations, inventory))
 
 
 if __name__ == "__main__":

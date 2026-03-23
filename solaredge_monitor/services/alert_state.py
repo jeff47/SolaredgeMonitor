@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, List, Optional, Tuple
 
 from solaredge_monitor.services.app_state import AppState
 from solaredge_monitor.services.alert_logic import Alert, evaluate_alerts
 from solaredge_monitor.models.system_health import SystemHealth
+
+
+@dataclass
+class RecoveryNotification:
+    inverter_name: str
+    serial: str
+    fault_code: str
+    message: str
+    resolved_at: datetime
+    first_seen: Optional[datetime] = None
 
 
 class AlertStateManager:
@@ -21,10 +32,14 @@ class AlertStateManager:
         *,
         state: AppState | None = None,
         consecutive_required: int = 1,
+        identical_alert_gate_minutes: int = 60,
+        repeat_alert_interval_minutes: int = 12 * 60,
     ):
         self.log = log
         self.state = state
         self.consecutive_required = max(1, int(consecutive_required))
+        self.identical_alert_gate_minutes = max(1, int(identical_alert_gate_minutes))
+        self.repeat_alert_interval_minutes = max(1, int(repeat_alert_interval_minutes))
 
     def _load_counters(self) -> dict[str, int]:
         if not self.state:
@@ -43,6 +58,19 @@ class AlertStateManager:
         if self.state is None:
             return
         self.state.set("health_alert_counters", counters)
+
+    def _load_incidents(self) -> dict[str, dict]:
+        if not self.state:
+            return {}
+        raw = self.state.get("open_alert_incidents", {}) or {}
+        if not isinstance(raw, dict):
+            return {}
+        return {str(key): value for key, value in raw.items() if isinstance(value, dict)}
+
+    def _save_incidents(self, incidents: dict[str, dict]) -> None:
+        if self.state is None:
+            return
+        self.state.set("open_alert_incidents", incidents)
 
     def _update_counters(self, counters: dict[str, int], health: SystemHealth) -> bool:
         changed = False
@@ -77,18 +105,49 @@ class AlertStateManager:
                 gated.append(alert)
         return gated
 
-    def build_alerts(
+    def _parse_dt(self, raw: object) -> Optional[datetime]:
+        if not raw or not isinstance(raw, str):
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+
+    def _should_emit_repeat(self, now: datetime, incident: dict) -> bool:
+        last_alerted = self._parse_dt(incident.get("last_alerted"))
+        if last_alerted is None:
+            return True
+        alert_count = int(incident.get("alert_count", 1) or 1)
+        interval_minutes = (
+            self.identical_alert_gate_minutes
+            if alert_count <= 1
+            else self.repeat_alert_interval_minutes
+        )
+        return (now - last_alerted).total_seconds() >= (interval_minutes * 60)
+
+    def _format_recovery_message(self, incident: dict, resolved_at: datetime) -> str:
+        previous = incident.get("message") or "fault cleared"
+        first_seen = self._parse_dt(incident.get("first_seen"))
+        if first_seen is None:
+            return f"Recovered: {previous}"
+        duration = resolved_at - first_seen
+        return f"Recovered after {duration}: {previous}"
+
+    def build_notification_batch(
         self,
         *,
         now: datetime,
         health: Optional[SystemHealth],
         optimizer_mismatches: Iterable[Tuple[str, int, Optional[int]]],
         extra_messages: Optional[Iterable[str]] = None,
-    ) -> List[Alert]:
+    ) -> tuple[List[Alert], List[RecoveryNotification]]:
         alerts: list[Alert] = []
+        recoveries: list[RecoveryNotification] = []
 
         counters = self._load_counters()
+        incidents = self._load_incidents()
         counters_changed = False
+        incidents_changed = False
 
         if health:
             counters_changed = self._update_counters(counters, health) or counters_changed
@@ -101,6 +160,7 @@ class AlertStateManager:
                     Alert(
                         inverter_name=name,
                         serial="CLOUD",
+                        fault_code="optimizer_mismatch",
                         message=f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})",
                         status=-1,
                         pac_w=None,
@@ -112,13 +172,75 @@ class AlertStateManager:
                 Alert(
                     inverter_name="SYSTEM",
                     serial="SYSTEM",
+                    fault_code="system_message",
                     message=msg,
                     status=-1,
                     pac_w=None,
                 )
             )
 
+        emitted: list[Alert] = []
+        current_names = {alert.inverter_name for alert in alerts}
+        known_names: set[str] = set()
+        if health is not None:
+            known_names.update(health.per_inverter.keys())
+        elif optimizer_mismatches:
+            known_names.update(name for name, _, _ in optimizer_mismatches)
+        if extra_messages is not None:
+            known_names.add("SYSTEM")
+
+        for alert in alerts:
+            key = alert.inverter_name
+            fingerprint = alert.fault_code
+            incident = incidents.get(key)
+            if not incident or incident.get("fingerprint") != fingerprint:
+                incidents[key] = {
+                    "fingerprint": fingerprint,
+                    "serial": alert.serial,
+                    "fault_code": alert.fault_code,
+                    "message": alert.message,
+                    "status": alert.status,
+                    "first_seen": now.isoformat(),
+                    "last_seen": now.isoformat(),
+                    "last_alerted": now.isoformat(),
+                    "alert_count": 1,
+                }
+                incidents_changed = True
+                emitted.append(alert)
+                continue
+
+            incident["serial"] = alert.serial
+            incident["fault_code"] = alert.fault_code
+            incident["message"] = alert.message
+            incident["status"] = alert.status
+            incident["last_seen"] = now.isoformat()
+
+            if self._should_emit_repeat(now, incident):
+                incident["last_alerted"] = now.isoformat()
+                incident["alert_count"] = int(incident.get("alert_count", 1) or 1) + 1
+                emitted.append(alert)
+            incidents[key] = incident
+            incidents_changed = True
+
+        for key in list(incidents.keys()):
+            if key in current_names or key not in known_names:
+                continue
+            incident = incidents.pop(key)
+            recoveries.append(
+                RecoveryNotification(
+                    inverter_name=key,
+                    serial=str(incident.get("serial") or key),
+                    fault_code=str(incident.get("fault_code") or "unknown_recovery"),
+                    message=self._format_recovery_message(incident, now),
+                    resolved_at=now,
+                    first_seen=self._parse_dt(incident.get("first_seen")),
+                )
+            )
+            incidents_changed = True
+
         if counters_changed:
             self._save_counters(counters)
+        if incidents_changed:
+            self._save_incidents(incidents)
 
-        return alerts
+        return emitted, recoveries

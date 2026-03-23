@@ -88,6 +88,8 @@ def _app_cfg(tmp_path, *, api_enabled: bool, skip_api_at_night: bool = False):
         healthchecks=SimpleNamespace(),
         health=SimpleNamespace(
             consecutive_health_alerts=1,
+            identical_alert_gate_minutes=60,
+            repeat_alert_interval_minutes=720,
             alert_irradiance_floor_wm2=30.0,
             precip_weather_codes=(61, 63),
             precip_cloud_cover_pct=100.0,
@@ -177,7 +179,11 @@ def test_main_simulate_night_skips_modbus_and_notifications(monkeypatch, tmp_pat
     monkeypatch.setattr(main_module, "SimulationReader", lambda *args, **kwargs: SimpleNamespace(read_all=lambda: []))
     monkeypatch.setattr(main_module, "SimulationAPIClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr(main_module, "DailySummaryService", FakeSummaryService)
-    monkeypatch.setattr(main_module, "AlertStateManager", lambda *args, **kwargs: SimpleNamespace(build_alerts=lambda **kwargs: []))
+    monkeypatch.setattr(
+        main_module,
+        "AlertStateManager",
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [])),
+    )
     monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "simulate", "--scenario", "sunset"])
 
@@ -212,13 +218,16 @@ def test_main_health_flow_reads_cloud_notifies_and_persists(monkeypatch, tmp_pat
                 inverter_ok=True,
                 reason=None,
                 reading=snapshot,
+                fault_code=None,
             )
         },
         reason=None,
+        fault_code=None,
     )
     alert = Alert(
         inverter_name="INV-A",
         serial="INV-A-SERIAL",
+        fault_code="synthetic_fault",
         message="Synthetic alert",
         status=4,
         pac_w=2500.0,
@@ -299,20 +308,26 @@ def test_main_health_flow_reads_cloud_notifies_and_persists(monkeypatch, tmp_pat
     monkeypatch.setattr(
         main_module,
         "NotificationManager",
-        lambda *args, **kwargs: SimpleNamespace(handle_alerts=lambda alerts, health=None: notifier_calls.append((alerts, health))),
+        lambda *args, **kwargs: SimpleNamespace(
+            handle_alerts=lambda alerts, recoveries=None, health=None: notifier_calls.append((alerts, recoveries, health))
+        ),
     )
     monkeypatch.setattr(main_module, "HealthEvaluator", lambda *args, **kwargs: evaluator)
     monkeypatch.setattr(main_module, "DaylightPolicy", FakeDaylightPolicy)
     monkeypatch.setattr(main_module, "ModbusReader", lambda *args, **kwargs: SimpleNamespace(read_all=lambda: {"INV-A": snapshot}))
     monkeypatch.setattr(main_module, "SolarEdgeAPIClient", lambda *args, **kwargs: FakeSEClient())
     monkeypatch.setattr(main_module, "DailySummaryService", FakeSummaryService)
-    monkeypatch.setattr(main_module, "AlertStateManager", lambda *args, **kwargs: SimpleNamespace(build_alerts=lambda **kwargs: [alert]))
+    monkeypatch.setattr(
+        main_module,
+        "AlertStateManager",
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([alert], [])),
+    )
     monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "health"])
 
     main_module.main()
 
-    assert notifier_calls == [([alert], health)]
+    assert notifier_calls == [([alert], [], health)]
     assert state.logged_run is not None
     assert state.logged_run["snapshots"] == {"INV-A": snapshot}
     assert state.serials["INV-A"] == "INV-A-SERIAL"
@@ -320,4 +335,3 @@ def test_main_health_flow_reads_cloud_notifies_and_persists(monkeypatch, tmp_pat
     assert evaluator.optimizer_args is not None
     assert evaluator.optimizer_args[2] == {"INV-A": "INV-A-SERIAL"}
     assert evaluator.optimizer_args[3] == {"INV-A-SERIAL": 12}
-

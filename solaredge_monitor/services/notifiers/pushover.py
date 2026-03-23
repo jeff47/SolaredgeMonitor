@@ -5,11 +5,11 @@ from __future__ import annotations
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
 from typing import Iterable, Optional
 
 from solaredge_monitor.config import PushoverConfig
 from solaredge_monitor.services.alert_logic import Alert
+from solaredge_monitor.services.alert_state import RecoveryNotification
 from solaredge_monitor.models.system_health import SystemHealth, InverterHealth
 
 
@@ -106,12 +106,17 @@ class PushoverNotifier:
             message = self._format_alert_message(alert, health)
             self._post("SolarEdge Alert", message)
 
-    # ------------------------------------------------------------------
-    def send_test(self) -> None:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        msg = f"Test message from SolarEdge monitor at {timestamp}"
-        self._post("SolarEdge Monitor Test", msg)
+    def _format_recovery_message(self, recovery: RecoveryNotification) -> str:
+        lines = [f"{recovery.inverter_name}: recovered", recovery.message]
+        lines.append(f"Fault: {recovery.fault_code}")
+        if recovery.first_seen is not None:
+            lines.append(f"First seen: {recovery.first_seen.isoformat()}")
+        lines.append(f"Resolved at: {recovery.resolved_at.isoformat()}")
+        return "\n".join(lines)
 
-    # ------------------------------------------------------------------
+    def send_recoveries(self, recoveries: Iterable[RecoveryNotification]) -> None:
+        for recovery in recoveries:
+            self._post("SolarEdge Recovery", self._format_recovery_message(recovery))
+
     def send_message(self, title: str, message: str) -> None:
         self._post(title, message)

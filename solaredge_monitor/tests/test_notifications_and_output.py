@@ -10,6 +10,7 @@ from solaredge_monitor.models.inverter import InverterSnapshot
 from solaredge_monitor.models.system_health import InverterHealth, SystemHealth
 from solaredge_monitor.models.weather import InverterExpectation, WeatherEstimate, WeatherSnapshot
 from solaredge_monitor.services.alert_logic import Alert
+from solaredge_monitor.services.alert_state import RecoveryNotification
 from solaredge_monitor.services.notification_manager import NotificationManager
 from solaredge_monitor.services.notifiers.healthchecks import HealthchecksNotifier
 from solaredge_monitor.services.notifiers.pushover import PushoverNotifier
@@ -94,6 +95,7 @@ def test_notification_manager_routes_success_and_failure():
     alert = Alert(
         inverter_name="INV-A",
         serial="INV-A-SERIAL",
+        fault_code="fault_state:7",
         message="Fault state",
         status=7,
         pac_w=0.0,
@@ -105,6 +107,37 @@ def test_notification_manager_routes_success_and_failure():
     assert pushover_calls[0] == ("alerts", [alert])
     assert healthchecks_calls[1] == ("failure", "INV-A:7")
     assert pushover_calls[1] == ("SolarEdge Daily Production: 3.20 kWh", "summary body")
+
+
+def test_notification_manager_sends_recovery_then_success_ping():
+    manager = NotificationManager(PushoverConfig(), HealthchecksConfig(), LOG)
+    pushover_calls: list[tuple[str, object]] = []
+    healthchecks_calls: list[tuple[str, str]] = []
+
+    manager.pushover = SimpleNamespace(
+        send_alerts=lambda alerts, health=None: pushover_calls.append(("alerts", list(alerts))),
+        send_recoveries=lambda recoveries: pushover_calls.append(("recoveries", list(recoveries))),
+        send_test=lambda: None,
+        send_message=lambda title, message: None,
+    )
+    manager.healthchecks = SimpleNamespace(
+        ping_success=lambda message="": healthchecks_calls.append(("success", message)),
+        ping_failure=lambda message="": healthchecks_calls.append(("failure", message)),
+        send_test=lambda: None,
+    )
+
+    recovery = RecoveryNotification(
+        inverter_name="INV-A",
+        serial="INV-A-SERIAL",
+        fault_code="offline",
+        message="Recovered after 1:00:00: No Modbus data (offline?)",
+        resolved_at=datetime(2024, 6, 1, 13, 0, tzinfo=timezone.utc),
+        first_seen=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    manager.handle_alerts([], recoveries=[recovery])
+
+    assert pushover_calls == [("recoveries", [recovery])]
+    assert healthchecks_calls == [("success", "system ok")]
 
 
 def test_pushover_formats_alert_with_baseline(monkeypatch):
@@ -120,21 +153,24 @@ def test_pushover_formats_alert_with_baseline(monkeypatch):
         inverter_ok=False,
         reason="Low output",
         reading=_snapshot("INV-A", status=4, pac_w=100.0),
+        fault_code="peer_mismatch",
     )
     healthy = InverterHealth(
         name="INV-B",
         inverter_ok=True,
         reason=None,
         reading=_snapshot("INV-B", status=4, pac_w=3100.0),
+        fault_code=None,
     )
     health = SystemHealth(
         system_ok=False,
         per_inverter={"INV-A": failing, "INV-B": healthy},
         reason="INV-A: Low output",
+        fault_code="inverter_faults",
     )
 
     notifier.send_alerts(
-        [Alert(inverter_name="INV-A", serial="INV-A-SERIAL", message="Low output", status=4, pac_w=100.0)],
+        [Alert(inverter_name="INV-A", serial="INV-A-SERIAL", fault_code="peer_mismatch", message="Low output", status=4, pac_w=100.0)],
         health=health,
     )
 

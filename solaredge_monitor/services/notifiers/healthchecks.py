@@ -5,7 +5,6 @@ from __future__ import annotations
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
 
 from solaredge_monitor.config import HealthchecksConfig
 
@@ -48,10 +47,3 @@ class HealthchecksNotifier:
 
     def ping_failure(self, message: str = "") -> None:
         self._hit("/fail", message)
-
-    # ------------------------------------------------------------------
-    def send_test(self) -> None:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        msg = f"Test ping from SolarEdge monitor at {timestamp}"
-        self.ping_success(msg)
-        self.ping_failure(msg)

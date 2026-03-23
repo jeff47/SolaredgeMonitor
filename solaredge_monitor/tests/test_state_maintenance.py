@@ -1,7 +1,5 @@
 from datetime import datetime, timedelta, timezone
 
-import sqlite3
-
 from solaredge_monitor.services.app_state import AppState
 from solaredge_monitor.services import state_maintenance
 

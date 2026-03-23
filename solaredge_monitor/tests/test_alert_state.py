@@ -1,10 +1,16 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from solaredge_monitor.services.alert_state import AlertStateManager
 from solaredge_monitor.services.app_state import AppState
 from solaredge_monitor.models.system_health import SystemHealth, InverterHealth
 from solaredge_monitor.models.inverter import InverterSnapshot
+
+
+def _alerts(mgr, **kwargs):
+    alerts, recoveries = mgr.build_notification_batch(**kwargs)
+    assert recoveries == []
+    return alerts
 
 
 def _health(system_ok=True):
@@ -26,15 +32,17 @@ def _health(system_ok=True):
         inverter_ok=system_ok,
         reason=None if system_ok else "Fault",
         reading=snapshot,
+        fault_code=None if system_ok else "fault_state:4",
     )
-    return SystemHealth(system_ok=system_ok, per_inverter={"INV-A": inverter_health}, reason=None)
+    return SystemHealth(system_ok=system_ok, per_inverter={"INV-A": inverter_health}, reason=None, fault_code=None)
 
 
 def test_alert_manager_uses_health_alerts():
     mgr = AlertStateManager(log=SimpleNamespace(debug=lambda *args, **kwargs: None))
     health = _health(system_ok=False)
 
-    alerts = mgr.build_alerts(
+    alerts = _alerts(
+        mgr,
         now=datetime.now(),
         health=health,
         optimizer_mismatches=[],
@@ -48,7 +56,8 @@ def test_alert_manager_handles_optimizer_mismatches_without_health():
     mgr = AlertStateManager(log=SimpleNamespace(debug=lambda *args, **kwargs: None))
 
     mismatches = [("INV-A", 10, 2)]
-    alerts = mgr.build_alerts(
+    alerts = _alerts(
+        mgr,
         now=datetime.now(),
         health=None,
         optimizer_mismatches=mismatches,
@@ -61,7 +70,8 @@ def test_alert_manager_handles_optimizer_mismatches_without_health():
 def test_alert_manager_includes_extra_messages():
     mgr = AlertStateManager(log=SimpleNamespace(debug=lambda *args, **kwargs: None))
 
-    alerts = mgr.build_alerts(
+    alerts = _alerts(
+        mgr,
         now=datetime.now(),
         health=None,
         optimizer_mismatches=[],
@@ -81,14 +91,16 @@ def test_consecutive_alerts_gate_and_reset():
     )
 
     unhealthy = _health(system_ok=False)
-    first = mgr.build_alerts(
+    first = _alerts(
+        mgr,
         now=datetime.now(),
         health=unhealthy,
         optimizer_mismatches=[],
     )
     assert first == []  # first failure suppressed
 
-    second = mgr.build_alerts(
+    second = _alerts(
+        mgr,
         now=datetime.now(),
         health=unhealthy,
         optimizer_mismatches=[],
@@ -96,17 +108,86 @@ def test_consecutive_alerts_gate_and_reset():
     assert len(second) == 1  # second consecutive failure emits alert
 
     healthy = _health(system_ok=True)
-    cleared = mgr.build_alerts(
+    cleared, recoveries = mgr.build_notification_batch(
         now=datetime.now(),
         health=healthy,
         optimizer_mismatches=[],
     )
-    assert cleared == []  # nothing to alert and counter resets
+    assert cleared == []
+    assert len(recoveries) == 1
 
     # After reset, a new failure should again require two runs
-    third = mgr.build_alerts(
+    third = _alerts(
+        mgr,
         now=datetime.now(),
         health=unhealthy,
         optimizer_mismatches=[],
     )
     assert third == []
+
+
+def test_identical_alerts_are_suppressed_then_reminded():
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+        identical_alert_gate_minutes=60,
+        repeat_alert_interval_minutes=12 * 60,
+    )
+    unhealthy = _health(system_ok=False)
+    t0 = datetime(2024, 6, 1, 12, 0, 0)
+
+    first = _alerts(mgr, now=t0, health=unhealthy, optimizer_mismatches=[])
+    second = _alerts(mgr, now=t0 + timedelta(minutes=5), health=unhealthy, optimizer_mismatches=[])
+    third = _alerts(mgr, now=t0 + timedelta(hours=1), health=unhealthy, optimizer_mismatches=[])
+    fourth = _alerts(mgr, now=t0 + timedelta(hours=2), health=unhealthy, optimizer_mismatches=[])
+    fifth = _alerts(mgr, now=t0 + timedelta(hours=13), health=unhealthy, optimizer_mismatches=[])
+
+    assert len(first) == 1
+    assert second == []
+    assert len(third) == 1
+    assert fourth == []
+    assert len(fifth) == 1
+
+
+def test_fault_change_emits_immediately_and_recovery_is_reported():
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+    )
+    t0 = datetime(2024, 6, 1, 12, 0, 0)
+
+    first_health = _health(system_ok=False)
+    first_health.per_inverter["INV-A"].reason = "No Modbus data (offline?)"
+    first_health.per_inverter["INV-A"].reading = None
+    first_health.per_inverter["INV-A"].fault_code = "offline"
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0,
+        health=first_health,
+        optimizer_mismatches=[],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    changed_health = _health(system_ok=False)
+    changed_health.per_inverter["INV-A"].reason = "Low DC voltage Vdc=40.0 V (<50.0 V threshold)"
+    changed_health.per_inverter["INV-A"].fault_code = "low_vdc"
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=10),
+        health=changed_health,
+        optimizer_mismatches=[],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    healthy = _health(system_ok=True)
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=20),
+        health=healthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert len(recoveries) == 1
+    assert recoveries[0].inverter_name == "INV-A"
+    assert "Recovered" in recoveries[0].message

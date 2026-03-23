@@ -7,7 +7,6 @@ from typing import Dict, Optional, Any, List, Tuple, Iterable
 from solaredge_monitor.config import HealthConfig, InverterConfig
 from solaredge_monitor.models.system_health import InverterHealth, SystemHealth
 from solaredge_monitor.models.inverter import InverterSnapshot
-from typing import List, Tuple
 
 
 @dataclass
@@ -83,6 +82,7 @@ class HealthEvaluator:
                 inverter_ok=False,
                 reason="No Modbus data (offline?)",
                 reading=None,
+                fault_code="offline",
             )
 
         status = reading.status
@@ -104,12 +104,14 @@ class HealthEvaluator:
                     inverter_ok=False,
                     reason=f"Unexpected inverter status: {status_str}",
                     reading=reading,
+                    fault_code=f"unexpected_status:{status}",
                 )
             return InverterHealth(
                 name=name,
                 inverter_ok=True,
                 reason=None,
                 reading=reading,
+                fault_code=None,
             )
 
         # ---------------------------------------
@@ -121,6 +123,7 @@ class HealthEvaluator:
                 inverter_ok=False,
                 reason=f"Fault state ({status_str})",
                 reading=reading,
+                fault_code=f"fault_state:{status}",
             )
 
         # ---------------------------------------
@@ -147,6 +150,7 @@ class HealthEvaluator:
                     f"(<{low_pac_threshold_w:.1f} W threshold)"
                 ),
                 reading=reading,
+                fault_code="low_pac",
             )
 
         # ---------------------------------------
@@ -167,6 +171,7 @@ class HealthEvaluator:
                     f"(<{low_vdc_threshold:.1f} V threshold)"
                 ),
                 reading=reading,
+                fault_code="low_vdc",
             )
 
         # ---------------------------------------
@@ -177,6 +182,7 @@ class HealthEvaluator:
             inverter_ok=True,
             reason=None,
             reading=reading,
+            fault_code=None,
         )
 
 
@@ -242,6 +248,7 @@ class HealthEvaluator:
                     f"Low output vs peer "
                     f"(PAC={pac:.1f} W, peer={max_pac:.1f} W, ratio={ratio:.2f} < {ratio_threshold})"
                 )
+                inv.fault_code = "peer_mismatch"
                 self.log.debug(f"Peer comparison flagged {name} as low")
 
     # ----------------------------------------------------------------------
@@ -255,6 +262,7 @@ class HealthEvaluator:
             if "pac" in reason or "peer" in reason:
                 inv_state.inverter_ok = True
                 inv_state.reason = None
+                inv_state.fault_code = None
 
     def evaluate(
         self,
@@ -321,6 +329,7 @@ class HealthEvaluator:
                 system_ok=system_ok,
                 per_inverter=per_inverter,
                 reason=None if system_ok else "; ".join(f"{b.name}: {b.reason}" for b in bad),
+                fault_code=None if system_ok else "inverter_faults",
             )
 
         # --------------------------------------------------------------
@@ -348,6 +357,7 @@ class HealthEvaluator:
                         system_ok=True,
                         per_inverter=per_inverter,
                         reason=None,
+                        fault_code=None,
                     )
 
         # --------------------------------------------------------------
@@ -372,7 +382,8 @@ class HealthEvaluator:
                 return SystemHealth(
                     system_ok=system_ok,
                     per_inverter=per_inverter,
-                    reason=None if system_ok else "; ".join(f"{b.name}: {b.reason}" for b in bad)
+                    reason=None if system_ok else "; ".join(f"{b.name}: {b.reason}" for b in bad),
+                    fault_code=None if system_ok else "inverter_faults",
                 )
 
         # --------------------------------------------------------------
@@ -393,12 +404,14 @@ class HealthEvaluator:
                 system_ok=False,
                 per_inverter=per_inverter,
                 reason="; ".join(f"{b.name}: {b.reason}" for b in bad),
+                fault_code="inverter_faults",
             )
 
         return SystemHealth(
             system_ok=True,
             per_inverter=per_inverter,
             reason=None,
+            fault_code=None,
         )
 
     # ----------------------------------------------------------------------
@@ -437,6 +450,7 @@ class HealthEvaluator:
             else:
                 inv_state.reason = reason
             inv_state.inverter_ok = False
+            inv_state.fault_code = "optimizer_mismatch"
 
     def update_with_optimizer_counts(
         self,
@@ -471,5 +485,6 @@ class HealthEvaluator:
                 bad = [inv for inv in health.per_inverter.values() if not inv.inverter_ok]
                 if bad:
                     health.reason = "; ".join(f"{b.name}: {b.reason}" for b in bad)
+                    health.fault_code = "inverter_faults"
 
         return mismatches

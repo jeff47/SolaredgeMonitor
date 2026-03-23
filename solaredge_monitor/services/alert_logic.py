@@ -12,6 +12,7 @@ from solaredge_monitor.models.system_health import InverterHealth, SystemHealth
 class Alert:
     inverter_name: str
     serial: str
+    fault_code: str
     message: str
     status: int
     pac_w: float | None
@@ -37,6 +38,7 @@ def evaluate_alerts(health: SystemHealth, now: datetime | None = None) -> List[A
             Alert(
                 inverter_name=inv.name,
                 serial=serial,
+                fault_code=inv.fault_code or "unknown_inverter_fault",
                 message=inv.reason or "Unknown inverter fault",
                 status=status,
                 pac_w=pac,
@@ -48,6 +50,7 @@ def evaluate_alerts(health: SystemHealth, now: datetime | None = None) -> List[A
             Alert(
                 inverter_name="SYSTEM",
                 serial="SYSTEM",
+                fault_code=health.fault_code or "system_failure",
                 message=health.reason or "System health failure",
                 status=-1,
                 pac_w=None,

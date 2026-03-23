@@ -1,5 +1,4 @@
 from datetime import datetime, date
-from pathlib import Path
 
 import sqlite3
 

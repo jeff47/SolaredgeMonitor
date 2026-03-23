@@ -6,6 +6,7 @@ from typing import Iterable, List, Optional
 
 from solaredge_monitor.config import HealthchecksConfig, PushoverConfig
 from solaredge_monitor.services.alert_logic import Alert
+from solaredge_monitor.services.alert_state import RecoveryNotification
 from solaredge_monitor.services.notifiers.healthchecks import HealthchecksNotifier
 from solaredge_monitor.services.notifiers.pushover import PushoverNotifier
 from solaredge_monitor.models.system_health import SystemHealth
@@ -20,10 +21,21 @@ class NotificationManager:
         self.healthchecks = HealthchecksNotifier(hc_cfg, log)
 
     # ------------------------------------------------------------------
-    def handle_alerts(self, alerts: Iterable[Alert], *, health: Optional[SystemHealth] = None) -> None:
+    def handle_alerts(
+        self,
+        alerts: Iterable[Alert],
+        *,
+        recoveries: Optional[Iterable[RecoveryNotification]] = None,
+        health: Optional[SystemHealth] = None,
+    ) -> None:
         """Send notifications based on the current alert list."""
 
         alerts_list: List[Alert] = list(alerts)
+        recovery_list: List[RecoveryNotification] = list(recoveries or [])
+
+        if recovery_list:
+            self.log.info("%d recovery notifications detected.", len(recovery_list))
+            self.pushover.send_recoveries(recovery_list)
 
         if not alerts_list:
             self.log.info("No alerts detected; sending Healthchecks success ping.")
@@ -35,14 +47,6 @@ class NotificationManager:
 
         summary = ", ".join(f"{a.inverter_name}:{a.status}" for a in alerts_list)
         self.healthchecks.ping_failure(summary or "alerts present")
-
-    # ------------------------------------------------------------------
-    def send_test_notifications(self) -> None:
-        """Trigger manual test messages for both channels."""
-
-        self.log.info("Sending test notification via Pushover and Healthchecks...")
-        self.pushover.send_test()
-        self.healthchecks.send_test()
 
     # ------------------------------------------------------------------
     def send_daily_summary(

@@ -144,6 +144,8 @@ structured_path = ./structured.jsonl
     assert [inv.name for inv in cfg.modbus.inverters] == ["INV-A", "INV-B"]
     assert cfg.modbus.inverters[0].expected_optimizers == 12
     assert cfg.modbus.inverters[0].ac_capacity_kw == 4.2
+    assert cfg.health.identical_alert_gate_minutes == 60
+    assert cfg.health.repeat_alert_interval_minutes == 720
 
     assert cfg.solaredge_api.enabled is True
     assert cfg.solaredge_api.api_key == "secret"
@@ -165,4 +167,3 @@ structured_path = ./structured.jsonl
     assert cfg.logging.debug_modules == ["pymodbus", "requests"]
     assert cfg.logging.structured_enabled is True
     assert cfg.logging.structured_path == "./structured.jsonl"
-

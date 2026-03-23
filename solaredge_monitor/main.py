@@ -190,6 +190,7 @@ def run_notify_test(notifier: NotificationManager, log, mode: str) -> None:
         test_alert = Alert(
             inverter_name="TEST-INVERTER",
             serial="SIM-0000",
+            fault_code="synthetic_fault",
             message="CLI-triggered test fault",
             status=7,
             pac_w=0.0,
@@ -338,6 +339,8 @@ def main():
         log,
         state=state,
         consecutive_required=app_cfg.health.consecutive_health_alerts,
+        identical_alert_gate_minutes=app_cfg.health.identical_alert_gate_minutes,
+        repeat_alert_interval_minutes=app_cfg.health.repeat_alert_interval_minutes,
     )
     weather_client = WeatherClient(app_cfg.weather, log)
 
@@ -451,7 +454,7 @@ def main():
         elif se_client.enabled and daylight_info.skip_cloud and has_optimizer_expectations:
             log.info("SolarEdge API polling skipped at night (configuration).")
 
-        alerts = alert_manager.build_alerts(
+        alerts, recoveries = alert_manager.build_notification_batch(
             now=now,
             health=health,
             optimizer_mismatches=optimizer_mismatches,
@@ -473,7 +476,7 @@ def main():
                 "Modbus polling skipped; suppressing Healthchecks ping until monitoring resumes."
             )
         else:
-            notifier.handle_alerts(alerts, health=health)
+            notifier.handle_alerts(alerts, recoveries=recoveries, health=health)
 
         if (
             args.command == "health"

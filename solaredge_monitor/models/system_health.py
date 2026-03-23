@@ -10,6 +10,7 @@ class InverterHealth:
     inverter_ok: bool
     reason: Optional[str]
     reading: Optional[InverterSnapshot]
+    fault_code: Optional[str] = None
 
 
 @dataclass
@@ -17,3 +18,4 @@ class SystemHealth:
     system_ok: bool
     per_inverter: Dict[str, InverterHealth]
     reason: Optional[str]
+    fault_code: Optional[str] = None
