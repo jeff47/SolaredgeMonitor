@@ -191,3 +191,57 @@ def test_fault_change_emits_immediately_and_recovery_is_reported():
     assert len(recoveries) == 1
     assert recoveries[0].inverter_name == "INV-A"
     assert "Recovered" in recoveries[0].message
+
+
+def test_optimizer_mismatch_resolves_when_source_evaluated_empty():
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+    )
+    t0 = datetime(2024, 6, 1, 12, 0, 0)
+
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0,
+        health=None,
+        optimizer_mismatches=[("INV-A", 10, 2)],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=5),
+        health=None,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert len(recoveries) == 1
+    assert recoveries[0].fault_code == "optimizer_mismatch"
+
+
+def test_system_message_resolves_when_source_evaluated_empty():
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+    )
+    t0 = datetime(2024, 6, 1, 12, 0, 0)
+
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0,
+        health=None,
+        optimizer_mismatches=None,
+        extra_messages=["Daily summary failed"],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=5),
+        health=None,
+        optimizer_mismatches=None,
+        extra_messages=[],
+    )
+    assert alerts == []
+    assert len(recoveries) == 1
+    assert recoveries[0].fault_code == "system_message"

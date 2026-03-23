@@ -169,7 +169,12 @@ class Config:
         p = cfg.parser
 
         def _as_bool(value: str) -> bool:
-            return value.strip().lower() == "true"
+            normalized = value.strip().lower()
+            if normalized == "true":
+                return True
+            if normalized == "false":
+                return False
+            raise ValueError(f"Invalid boolean value: {value!r}")
 
         def _maybe_float(raw: str | None) -> float | None:
             if raw is None:

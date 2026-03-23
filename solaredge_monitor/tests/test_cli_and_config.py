@@ -167,3 +167,42 @@ structured_path = ./structured.jsonl
     assert cfg.logging.debug_modules == ["pymodbus", "requests"]
     assert cfg.logging.structured_enabled is True
     assert cfg.logging.structured_path == "./structured.jsonl"
+
+
+def test_config_accepts_explicit_false_boolean_values(tmp_path: Path):
+    path = _write_config(
+        tmp_path,
+        """
+[modbus]
+inverters = INV-A
+skip_modbus_at_night = false
+
+[inverter:INV-A]
+host = 1.1.1.1
+
+[pushover]
+enabled = false
+""".strip(),
+    )
+
+    cfg = Config.load(str(path))
+
+    assert cfg.modbus.skip_modbus_at_night is False
+    assert cfg.pushover.enabled is False
+
+
+def test_config_rejects_invalid_boolean_values(tmp_path: Path):
+    path = _write_config(
+        tmp_path,
+        """
+[modbus]
+inverters = INV-A
+skip_modbus_at_night = tru
+
+[inverter:INV-A]
+host = 1.1.1.1
+""".strip(),
+    )
+
+    with pytest.raises(ValueError, match="Invalid boolean value"):
+        Config.load(str(path))

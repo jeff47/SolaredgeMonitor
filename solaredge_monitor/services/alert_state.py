@@ -133,16 +133,30 @@ class AlertStateManager:
         duration = resolved_at - first_seen
         return f"Recovered after {duration}: {previous}"
 
+    def _incident_source(self, incident: dict) -> str:
+        fault_code = str(incident.get("fault_code") or "")
+        if fault_code == "optimizer_mismatch":
+            return "optimizer"
+        if fault_code == "system_message":
+            return "extra"
+        return "health"
+
     def build_notification_batch(
         self,
         *,
         now: datetime,
         health: Optional[SystemHealth],
-        optimizer_mismatches: Iterable[Tuple[str, int, Optional[int]]],
+        optimizer_mismatches: Optional[Iterable[Tuple[str, int, Optional[int]]]] = None,
         extra_messages: Optional[Iterable[str]] = None,
     ) -> tuple[List[Alert], List[RecoveryNotification]]:
         alerts: list[Alert] = []
         recoveries: list[RecoveryNotification] = []
+
+        health_evaluated = health is not None
+        optimizer_evaluated = optimizer_mismatches is not None
+        extra_evaluated = extra_messages is not None
+        optimizer_mismatches_list = list(optimizer_mismatches or [])
+        extra_messages_list = list(extra_messages or [])
 
         counters = self._load_counters()
         incidents = self._load_incidents()
@@ -154,7 +168,7 @@ class AlertStateManager:
             health_alerts = evaluate_alerts(health, now)
             alerts.extend(self._filter_by_consecutive(counters, health_alerts))
         else:
-            for name, expected, actual in optimizer_mismatches:
+            for name, expected, actual in optimizer_mismatches_list:
                 actual_txt = "unknown" if actual is None else str(actual)
                 alerts.append(
                     Alert(
@@ -167,7 +181,7 @@ class AlertStateManager:
                     )
                 )
 
-        for msg in extra_messages or []:
+        for msg in extra_messages_list:
             alerts.append(
                 Alert(
                     inverter_name="SYSTEM",
@@ -181,13 +195,7 @@ class AlertStateManager:
 
         emitted: list[Alert] = []
         current_names = {alert.inverter_name for alert in alerts}
-        known_names: set[str] = set()
-        if health is not None:
-            known_names.update(health.per_inverter.keys())
-        elif optimizer_mismatches:
-            known_names.update(name for name, _, _ in optimizer_mismatches)
-        if extra_messages is not None:
-            known_names.add("SYSTEM")
+        health_names = set(health.per_inverter.keys()) if health is not None else set()
 
         for alert in alerts:
             key = alert.inverter_name
@@ -223,8 +231,19 @@ class AlertStateManager:
             incidents_changed = True
 
         for key in list(incidents.keys()):
-            if key in current_names or key not in known_names:
+            if key in current_names:
                 continue
+            incident = incidents[key]
+            source = self._incident_source(incident)
+            if source == "health":
+                if not health_evaluated or key not in health_names:
+                    continue
+            elif source == "optimizer":
+                if not optimizer_evaluated:
+                    continue
+            elif source == "extra":
+                if not extra_evaluated:
+                    continue
             incident = incidents.pop(key)
             recoveries.append(
                 RecoveryNotification(
