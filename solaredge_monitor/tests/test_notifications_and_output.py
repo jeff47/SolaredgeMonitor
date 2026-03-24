@@ -140,6 +140,44 @@ def test_notification_manager_sends_recovery_then_success_ping():
     assert healthchecks_calls == [("success", "system ok")]
 
 
+def test_notification_manager_sends_failure_ping_for_suppressed_persistent_fault():
+    manager = NotificationManager(PushoverConfig(), HealthchecksConfig(), LOG)
+    pushover_calls: list[tuple[str, object]] = []
+    healthchecks_calls: list[tuple[str, str]] = []
+
+    manager.pushover = SimpleNamespace(
+        send_alerts=lambda alerts, health=None: pushover_calls.append(("alerts", list(alerts))),
+        send_recoveries=lambda recoveries: pushover_calls.append(("recoveries", list(recoveries))),
+        send_test=lambda: None,
+        send_message=lambda title, message: None,
+    )
+    manager.healthchecks = SimpleNamespace(
+        ping_success=lambda message="": healthchecks_calls.append(("success", message)),
+        ping_failure=lambda message="": healthchecks_calls.append(("failure", message)),
+        send_test=lambda: None,
+    )
+
+    health = SystemHealth(
+        system_ok=False,
+        per_inverter={
+            "SE10000H": InverterHealth(
+                name="SE10000H",
+                inverter_ok=False,
+                reason="No Modbus data (offline?)",
+                reading=None,
+                fault_code="optimizer_mismatch",
+            )
+        },
+        reason="SE10000H: No Modbus data (offline?)",
+        fault_code="inverter_faults",
+    )
+
+    manager.handle_alerts([], health=health)
+
+    assert pushover_calls == []
+    assert healthchecks_calls == [("failure", "SE10000H: No Modbus data (offline?)")]
+
+
 def test_pushover_formats_alert_with_baseline(monkeypatch):
     posted: list[tuple[str, str]] = []
     notifier = PushoverNotifier(

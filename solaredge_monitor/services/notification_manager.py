@@ -38,6 +38,14 @@ class NotificationManager:
             self.pushover.send_recoveries(recovery_list)
 
         if not alerts_list:
+            if health is not None and not health.system_ok:
+                summary = self._health_failure_summary(health)
+                self.log.warning(
+                    "No new alerts emitted, but system health is still failing; sending Healthchecks failure ping."
+                )
+                self.healthchecks.ping_failure(summary)
+                return
+
             self.log.info("No alerts detected; sending Healthchecks success ping.")
             self.healthchecks.ping_success("system ok")
             return
@@ -47,6 +55,18 @@ class NotificationManager:
 
         summary = ", ".join(f"{a.inverter_name}:{a.status}" for a in alerts_list)
         self.healthchecks.ping_failure(summary or "alerts present")
+
+    def _health_failure_summary(self, health: SystemHealth) -> str:
+        if health.reason:
+            return health.reason
+        failing = [
+            name
+            for name, inv in health.per_inverter.items()
+            if not inv.inverter_ok
+        ]
+        if failing:
+            return ", ".join(failing)
+        return "health failure"
 
     # ------------------------------------------------------------------
     def send_daily_summary(
