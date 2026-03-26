@@ -339,6 +339,7 @@ def main():
         log,
         state=state,
         consecutive_required=app_cfg.health.consecutive_health_alerts,
+        consecutive_recovery_required=app_cfg.health.consecutive_recovery_samples,
         identical_alert_gate_minutes=app_cfg.health.identical_alert_gate_minutes,
         repeat_alert_interval_minutes=app_cfg.health.repeat_alert_interval_minutes,
     )

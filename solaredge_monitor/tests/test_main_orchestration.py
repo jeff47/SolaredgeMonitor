@@ -88,6 +88,7 @@ def _app_cfg(tmp_path, *, api_enabled: bool, skip_api_at_night: bool = False):
         healthchecks=SimpleNamespace(),
         health=SimpleNamespace(
             consecutive_health_alerts=1,
+            consecutive_recovery_samples=1,
             identical_alert_gate_minutes=60,
             repeat_alert_interval_minutes=720,
             alert_irradiance_floor_wm2=30.0,

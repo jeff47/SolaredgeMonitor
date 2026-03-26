@@ -32,12 +32,14 @@ class AlertStateManager:
         *,
         state: AppState | None = None,
         consecutive_required: int = 1,
+        consecutive_recovery_required: int = 1,
         identical_alert_gate_minutes: int = 60,
         repeat_alert_interval_minutes: int = 12 * 60,
     ):
         self.log = log
         self.state = state
         self.consecutive_required = max(1, int(consecutive_required))
+        self.consecutive_recovery_required = max(1, int(consecutive_recovery_required))
         self.identical_alert_gate_minutes = max(1, int(identical_alert_gate_minutes))
         self.repeat_alert_interval_minutes = max(1, int(repeat_alert_interval_minutes))
 
@@ -59,6 +61,24 @@ class AlertStateManager:
             return
         self.state.set("health_alert_counters", counters)
 
+    def _load_recovery_counters(self) -> dict[str, int]:
+        if not self.state:
+            return {}
+        raw = self.state.get("health_recovery_counters", {}) or {}
+        counters: dict[str, int] = {}
+        if isinstance(raw, dict):
+            for key, value in raw.items():
+                try:
+                    counters[key] = int(value)
+                except (TypeError, ValueError):
+                    continue
+        return counters
+
+    def _save_recovery_counters(self, counters: dict[str, int]) -> None:
+        if self.state is None:
+            return
+        self.state.set("health_recovery_counters", counters)
+
     def _load_incidents(self) -> dict[str, dict]:
         if not self.state:
             return {}
@@ -72,7 +92,12 @@ class AlertStateManager:
             return
         self.state.set("open_alert_incidents", incidents)
 
-    def _update_counters(self, counters: dict[str, int], health: SystemHealth) -> bool:
+    def _update_counters(
+        self,
+        counters: dict[str, int],
+        recovery_counters: dict[str, int],
+        health: SystemHealth,
+    ) -> bool:
         changed = False
         for name, inv_state in health.per_inverter.items():
             key = name
@@ -80,7 +105,14 @@ class AlertStateManager:
                 if counters.get(key, 0) != 0:
                     counters[key] = 0
                     changed = True
+                prev_recovery = recovery_counters.get(key, 0)
+                recovery_counters[key] = prev_recovery + 1
+                if recovery_counters[key] != prev_recovery:
+                    changed = True
                 continue
+            if recovery_counters.get(key, 0) != 0:
+                recovery_counters[key] = 0
+                changed = True
             prev = counters.get(key, 0)
             counters[key] = prev + 1
             if counters[key] != prev:
@@ -159,12 +191,16 @@ class AlertStateManager:
         extra_messages_list = list(extra_messages or [])
 
         counters = self._load_counters()
+        recovery_counters = self._load_recovery_counters()
         incidents = self._load_incidents()
         counters_changed = False
+        recovery_counters_changed = False
         incidents_changed = False
 
         if health:
-            counters_changed = self._update_counters(counters, health) or counters_changed
+            changed = self._update_counters(counters, recovery_counters, health)
+            counters_changed = changed or counters_changed
+            recovery_counters_changed = changed or recovery_counters_changed
             health_alerts = evaluate_alerts(health, now)
             alerts.extend(self._filter_by_consecutive(counters, health_alerts))
 
@@ -238,6 +274,8 @@ class AlertStateManager:
             if source == "health":
                 if not health_evaluated or key not in health_names:
                     continue
+                if recovery_counters.get(key, 0) < self.consecutive_recovery_required:
+                    continue
             elif source == "optimizer":
                 if not optimizer_evaluated:
                     continue
@@ -259,6 +297,8 @@ class AlertStateManager:
 
         if counters_changed:
             self._save_counters(counters)
+        if recovery_counters_changed:
+            self._save_recovery_counters(recovery_counters)
         if incidents_changed:
             self._save_incidents(incidents)
 

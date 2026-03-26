@@ -61,6 +61,7 @@ min_production_for_peer_check = 0.5  # % of AC capacity; skip peer check if all 
 low_light_peer_skip_threshold = 0.2  # % of AC capacity; treat both inverters < this as low light
 low_pac_threshold = 1.0              # % of AC capacity; flag producing inverters below this PAC
 consecutive_health_alerts = 1        # Require this many consecutive failures before alerting; resets on a healthy reading
+consecutive_recovery_samples = 1     # Require this many consecutive healthy checks before sending recovery
 identical_alert_gate_minutes = 60    # Suppress identical persistent fault alerts until this many minutes have passed
 repeat_alert_interval_minutes = 720  # After the first reminder, resend unresolved identical faults at most this often
 low_vdc_threshold = 50               # Flag Vdc below this (V)

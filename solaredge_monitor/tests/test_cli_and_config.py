@@ -144,6 +144,7 @@ structured_path = ./structured.jsonl
     assert [inv.name for inv in cfg.modbus.inverters] == ["INV-A", "INV-B"]
     assert cfg.modbus.inverters[0].expected_optimizers == 12
     assert cfg.modbus.inverters[0].ac_capacity_kw == 4.2
+    assert cfg.health.consecutive_recovery_samples == 1
     assert cfg.health.identical_alert_gate_minutes == 60
     assert cfg.health.repeat_alert_interval_minutes == 720
 

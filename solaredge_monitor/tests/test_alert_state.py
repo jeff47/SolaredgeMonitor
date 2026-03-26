@@ -145,6 +145,52 @@ def test_consecutive_alerts_gate_and_reset():
     assert third == []
 
 
+def test_recovery_gate_requires_consecutive_healthy_samples():
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+        consecutive_required=2,
+        consecutive_recovery_required=3,
+    )
+    t0 = datetime(2024, 6, 1, 12, 0, 0)
+
+    unhealthy = _health(system_ok=False)
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0,
+        health=unhealthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert recoveries == []
+
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=5),
+        health=unhealthy,
+        optimizer_mismatches=[],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    healthy = _health(system_ok=True)
+    for minutes in (10, 15):
+        alerts, recoveries = mgr.build_notification_batch(
+            now=t0 + timedelta(minutes=minutes),
+            health=healthy,
+            optimizer_mismatches=[],
+        )
+        assert alerts == []
+        assert recoveries == []
+
+    alerts, recoveries = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=20),
+        health=healthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert len(recoveries) == 1
+
+
 def test_identical_alerts_are_suppressed_then_reminded():
     state = AppState(persist=False)
     mgr = AlertStateManager(

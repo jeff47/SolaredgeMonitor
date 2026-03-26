@@ -56,6 +56,7 @@ class HealthConfig:
     low_light_peer_skip_threshold: float = 0.2   # percent of AC capacity
     low_pac_threshold: float = 1.0               # percent of AC capacity
     consecutive_health_alerts: int = 1           # consecutive failures required before alerting
+    consecutive_recovery_samples: int = 1        # consecutive healthy samples required before recovery
     identical_alert_gate_minutes: int = 60
     repeat_alert_interval_minutes: int = 12 * 60
     low_vdc_threshold: float = 50.0
@@ -272,6 +273,8 @@ class Config:
                 health_kwargs["low_pac_threshold"] = float(health_sec["low_pac_threshold"])
             if "consecutive_health_alerts" in health_sec:
                 health_kwargs["consecutive_health_alerts"] = int(health_sec["consecutive_health_alerts"])
+            if "consecutive_recovery_samples" in health_sec:
+                health_kwargs["consecutive_recovery_samples"] = int(health_sec["consecutive_recovery_samples"])
             if "identical_alert_gate_minutes" in health_sec:
                 health_kwargs["identical_alert_gate_minutes"] = int(health_sec["identical_alert_gate_minutes"])
             if "repeat_alert_interval_minutes" in health_sec:
