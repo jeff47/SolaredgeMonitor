@@ -381,6 +381,11 @@ def main():
                 fallback_lon=app_cfg.daylight.longitude,
             )
 
+        for cfg in app_cfg.modbus.inverters:
+            serial = state.get_inverter_serial(cfg.name)
+            if serial:
+                serial_by_name.setdefault(cfg.name, serial.upper())
+
         if se_client.enabled and not daylight_info.skip_cloud:
             cloud_inverters = se_client.fetch_inverters()
             for inv in cloud_inverters:
@@ -391,12 +396,6 @@ def main():
                 cloud_by_serial[serial] = inv
                 cloud_by_serial[raw_serial] = inv
                 serial_by_name.setdefault(inv.name, serial)
-        else:
-            for cfg in app_cfg.modbus.inverters:
-                serial = state.get_inverter_serial(cfg.name)
-                if serial:
-                    serial_by_name.setdefault(cfg.name, serial)
-
         # --- stdout output ---
         if not args.quiet:
             if args.json:

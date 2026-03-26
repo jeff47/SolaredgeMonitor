@@ -439,3 +439,120 @@ def test_main_health_flow_passes_unhealthy_state_when_alerts_suppressed(monkeypa
     assert notifier_calls == [([], [], health)]
     assert state.logged_run is not None
     assert state.flush_called is True
+
+
+def test_main_health_flow_uses_cached_serials_for_optimizer_lookup_when_modbus_is_offline(monkeypatch, tmp_path):
+    cfg = _app_cfg(tmp_path, api_enabled=True)
+    log = DummyLog()
+    state = FakeState(path=cfg.state.path, persist=True)
+    state.serials["INV-A"] = "INV-A-SERIAL"
+    health = SystemHealth(
+        system_ok=False,
+        per_inverter={
+            "INV-A": InverterHealth(
+                name="INV-A",
+                inverter_ok=False,
+                reason="No Modbus data (offline?)",
+                reading=None,
+                fault_code="offline",
+            )
+        },
+        reason="INV-A: No Modbus data (offline?)",
+        fault_code="inverter_faults",
+    )
+    cloud_inventory = [
+        CloudInverter(
+            serial="INV-A-SERIAL-CF",
+            name="Inverter 1",
+            status="Online",
+            model="SE",
+            connected_optimizers=12,
+            raw={},
+        )
+    ]
+
+    class FakeEvaluator:
+        def __init__(self, *args, **kwargs):
+            self.optimizer_args = None
+
+        def derive_thresholds(self, names, capacity_map):
+            return Thresholds(
+                low_pac_w={},
+                low_light_peer_skip_w={},
+                min_production_for_peer_check_w={},
+            )
+
+        def evaluate(self, *args, **kwargs):
+            return health
+
+        def update_with_optimizer_counts(self, health_obj, inverter_cfgs, serial_by_name, optimizer_counts_by_serial):
+            self.optimizer_args = (health_obj, list(inverter_cfgs), serial_by_name, optimizer_counts_by_serial)
+            return []
+
+    evaluator = FakeEvaluator()
+
+    class FakeDaylightPolicy:
+        def __init__(self, *args, **kwargs):
+            self.timezone = timezone.utc
+
+        def get_info(self, now):
+            return SimpleNamespace(
+                skip_modbus=False,
+                skip_cloud=False,
+                in_grace_window=False,
+                production_day_over=False,
+                is_daylight=True,
+                phase="day",
+                sunrise=datetime(2024, 6, 1, 5, 30, tzinfo=timezone.utc),
+                sunset=datetime(2024, 6, 1, 20, 30, tzinfo=timezone.utc),
+                sunrise_grace_end=datetime(2024, 6, 1, 6, 0, tzinfo=timezone.utc),
+                sunset_grace_start=datetime(2024, 6, 1, 19, 45, tzinfo=timezone.utc),
+                production_over_at=datetime(2024, 6, 1, 22, 0, tzinfo=timezone.utc),
+            )
+
+    class FakeSEClient:
+        enabled = True
+
+        def fetch_inverters(self):
+            return cloud_inventory
+
+        def get_optimizer_counts(self, inventory=None):
+            return {
+                "INV-A-SERIAL-CF": 12,
+                "INV-A-SERIAL": 12,
+            }
+
+    class FakeSummaryService:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def should_run(self, day, daylight_info):
+            return False
+
+    monkeypatch.setattr(main_module, "Config", SimpleNamespace(load=lambda path: cfg))
+    monkeypatch.setattr(main_module, "ConsoleLog", lambda **kwargs: FakeConsoleLog(log))
+    monkeypatch.setattr(main_module, "StructuredLog", FakeStructuredLog)
+    monkeypatch.setattr(main_module, "AppState", lambda *args, **kwargs: state)
+    monkeypatch.setattr(
+        main_module,
+        "NotificationManager",
+        lambda *args, **kwargs: SimpleNamespace(handle_alerts=lambda *args, **kwargs: None),
+    )
+    monkeypatch.setattr(main_module, "HealthEvaluator", lambda *args, **kwargs: evaluator)
+    monkeypatch.setattr(main_module, "DaylightPolicy", FakeDaylightPolicy)
+    monkeypatch.setattr(main_module, "ModbusReader", lambda *args, **kwargs: SimpleNamespace(read_all=lambda: {"INV-A": None}))
+    monkeypatch.setattr(main_module, "SolarEdgeAPIClient", lambda *args, **kwargs: FakeSEClient())
+    monkeypatch.setattr(main_module, "DailySummaryService", FakeSummaryService)
+    monkeypatch.setattr(
+        main_module,
+        "AlertStateManager",
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [])),
+    )
+    monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
+    monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "health"])
+
+    main_module.main()
+
+    assert evaluator.optimizer_args is not None
+    assert evaluator.optimizer_args[2]["INV-A"] == "INV-A-SERIAL"
+    assert evaluator.optimizer_args[3] == {"INV-A-SERIAL-CF": 12, "INV-A-SERIAL": 12}

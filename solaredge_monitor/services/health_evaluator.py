@@ -424,7 +424,8 @@ class HealthEvaluator:
         mismatches: List[Tuple[str, int, Optional[int]]] = []
         for name, expected in expected_counts.items():
             actual = actual_counts.get(name)
-            if actual is None or actual != expected:
+            # Missing cloud data or an unresolved serial is not evidence of a real optimizer mismatch.
+            if actual is not None and actual != expected:
                 mismatches.append((name, expected, actual))
         return mismatches
 

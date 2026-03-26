@@ -314,3 +314,30 @@ def test_optimizer_count_mismatch_flags_inverter():
     assert not health.system_ok
     assert not health.per_inverter["A"].inverter_ok
     assert "Optimizer count mismatch" in health.per_inverter["A"].reason
+
+
+def test_missing_optimizer_count_does_not_create_mismatch():
+    ConsoleLog(level="INFO", quiet=True).setup()
+    log = get_logger("test")
+    evaluator = HealthEvaluator(DummyCfg(), log)
+    reader = MockModbusReader({
+        "A": None,
+    }, log)
+    snapshots = reader.read_all()
+    health = evaluator.evaluate(snapshots, capacity_by_name={"A": 10.0})
+
+    cfgs = [
+        InverterConfig(name="A", host="h", port=1502, unit=1, expected_optimizers=16),
+    ]
+
+    mismatches = evaluator.update_with_optimizer_counts(
+        health,
+        cfgs,
+        serial_by_name={},
+        optimizer_counts_by_serial={},
+    )
+
+    assert mismatches == []
+    assert not health.system_ok
+    assert health.per_inverter["A"].fault_code == "offline"
+    assert health.per_inverter["A"].reason == "No Modbus data (offline?)"
