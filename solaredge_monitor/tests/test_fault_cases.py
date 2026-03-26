@@ -230,7 +230,45 @@ def test_dark_irradiance_does_not_hide_fault_state():
 
 
 # ---------------------------------------------------------------------------
-# 9. Low sun angle should suppress sleeping alerts
+# 9. Grace window (sunset/sunrise) should suppress low-Vdc alerts
+# ---------------------------------------------------------------------------
+
+def test_grace_window_suppresses_low_vdc():
+    """low_vdc faults should be cleared during sunset/sunrise grace windows."""
+    evaluator = _mk_evaluator()
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 4, "pac_w": 0, "vdc_v": 20},  # Vdc collapsing at sunset
+        "INV-B": {"status": 4, "pac_w": 0, "vdc_v": 18},
+    }, evaluator.log)
+
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), low_light_grace=True, capacity_by_name=caps)
+
+    assert health.system_ok
+    assert health.per_inverter["INV-A"].inverter_ok
+    assert health.per_inverter["INV-B"].inverter_ok
+
+
+def test_low_vdc_still_alerts_outside_grace_window():
+    """low_vdc faults should fire during normal daylight hours."""
+    evaluator = _mk_evaluator()
+
+    reader = MockModbusReader({
+        "INV-A": {"status": 4, "pac_w": 0, "vdc_v": 20},  # faulted mid-day
+        "INV-B": {"status": 4, "pac_w": 650, "vdc_v": 380},
+    }, evaluator.log)
+
+    caps = {"INV-A": 1.0, "INV-B": 1.0}
+    health = evaluator.evaluate(reader.read_all(), low_light_grace=False, capacity_by_name=caps)
+
+    assert not health.system_ok
+    assert not health.per_inverter["INV-A"].inverter_ok
+    assert health.per_inverter["INV-B"].inverter_ok
+
+
+# ---------------------------------------------------------------------------
+# 10. Low sun angle should suppress sleeping alerts
 # ---------------------------------------------------------------------------
 
 def test_low_sun_angle_suppresses_sleeping_status():

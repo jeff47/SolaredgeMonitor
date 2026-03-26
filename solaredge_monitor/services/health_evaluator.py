@@ -258,8 +258,7 @@ class HealthEvaluator:
         for inv_state in per_inverter.values():
             if inv_state.inverter_ok:
                 continue
-            reason = (inv_state.reason or "").lower()
-            if "pac" in reason or "peer" in reason:
+            if inv_state.fault_code in ("low_pac", "peer_mismatch", "low_vdc"):
                 inv_state.inverter_ok = True
                 inv_state.reason = None
                 inv_state.fault_code = None
