@@ -91,7 +91,8 @@ def test_notification_manager_routes_success_and_failure():
         send_test=lambda: healthchecks_calls.append(("test", "")),
     )
 
-    manager.handle_alerts([])
+    healthy = SystemHealth(system_ok=True, per_inverter={}, reason=None, fault_code=None)
+    manager.handle_alerts([], health=healthy)
     alert = Alert(
         inverter_name="INV-A",
         serial="INV-A-SERIAL",
@@ -134,7 +135,8 @@ def test_notification_manager_sends_recovery_then_success_ping():
         resolved_at=datetime(2024, 6, 1, 13, 0, tzinfo=timezone.utc),
         first_seen=datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc),
     )
-    manager.handle_alerts([], recoveries=[recovery])
+    healthy = SystemHealth(system_ok=True, per_inverter={}, reason=None, fault_code=None)
+    manager.handle_alerts([], recoveries=[recovery], health=healthy)
 
     assert pushover_calls == [("recoveries", [recovery])]
     assert healthchecks_calls == [("success", "system ok")]
@@ -239,6 +241,27 @@ def test_healthchecks_notifier_encodes_failure_message(monkeypatch):
     parsed = urlparse(opened[0])
     assert parsed.path.endswith("/ping/abc/fail")
     assert len(parse_qs(parsed.query)["msg"][0]) == 200
+
+
+def test_handle_alerts_no_ping_when_health_is_none():
+    """When health=None (all inverters unreachable), no Healthchecks ping should be sent
+    — not even a false success ping."""
+    manager = NotificationManager(PushoverConfig(), HealthchecksConfig(), LOG)
+    healthchecks_calls: list[tuple[str, str]] = []
+
+    manager.pushover = SimpleNamespace(
+        send_alerts=lambda alerts, health=None: None,
+        send_recoveries=lambda recoveries: None,
+        send_message=lambda title, message: None,
+    )
+    manager.healthchecks = SimpleNamespace(
+        ping_success=lambda message="": healthchecks_calls.append(("success", message)),
+        ping_failure=lambda message="": healthchecks_calls.append(("failure", message)),
+    )
+
+    manager.handle_alerts([], health=None)
+
+    assert healthchecks_calls == [], "Should not ping when health is unknown"
 
 
 def test_emit_json_includes_weather_and_offline_record(capsys):

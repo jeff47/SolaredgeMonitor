@@ -68,7 +68,7 @@ class DailySummaryService:
 
         for inv_cfg in self.inverters:
             name = inv_cfg.name
-            serial = self._resolve_serial(inv_cfg, inventory) or self.state.get_inverter_serial(name)
+            serial = self._resolve_serial(inv_cfg, inventory)
 
             snapshot = modbus_map.get(name)
             current_total = None
@@ -100,7 +100,8 @@ class DailySummaryService:
                 if delta >= 0:
                     energy = delta
                     energy_source = "modbus"
-            elif api_energy is not None:
+
+            if energy is None and api_energy is not None:
                 energy = api_energy
                 energy_source = "api"
 
@@ -121,8 +122,7 @@ class DailySummaryService:
             per_inverter_wh=per_inverter,
         )
 
-        if self.state:
-            self.state.record_site_summary(day, site_wh_modbus, site_wh_api)
+        self.state.record_site_summary(day, site_wh_modbus, site_wh_api)
 
         self.mark_ran(day)
         self.state.flush()

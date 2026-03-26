@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from solaredge_monitor.services.alert_state import AlertStateManager
+from solaredge_monitor.services.alert_logic import evaluate_alerts
 from solaredge_monitor.services.app_state import AppState
 from solaredge_monitor.models.system_health import SystemHealth, InverterHealth
 from solaredge_monitor.models.inverter import InverterSnapshot
@@ -65,6 +66,24 @@ def test_alert_manager_handles_optimizer_mismatches_without_health():
 
     assert alerts
     assert "Optimizer count mismatch" in alerts[0].message
+
+
+def test_optimizer_mismatch_emitted_alongside_health_fault():
+    """Optimizer mismatches must fire even when health evaluation succeeds.
+    Previously they were silently dropped whenever health was not None."""
+    mgr = AlertStateManager(log=SimpleNamespace(debug=lambda *args, **kwargs: None))
+    unhealthy = _health(system_ok=False)
+
+    alerts = _alerts(
+        mgr,
+        now=datetime.now(),
+        health=unhealthy,
+        optimizer_mismatches=[("INV-A", 10, 2)],
+    )
+
+    fault_codes = {a.fault_code for a in alerts}
+    assert any("fault_state" in fc for fc in fault_codes), "health fault not emitted"
+    assert "optimizer_mismatch" in fault_codes, "optimizer mismatch silently dropped"
 
 
 def test_alert_manager_includes_extra_messages():
@@ -245,3 +264,50 @@ def test_system_message_resolves_when_source_evaluated_empty():
     assert alerts == []
     assert len(recoveries) == 1
     assert recoveries[0].fault_code == "system_message"
+
+
+def test_evaluate_alerts_system_level_fault_with_no_bad_inverters():
+    """When system_ok=False but all individual inverters are OK, a SYSTEM-level alert is emitted."""
+    health = SystemHealth(
+        system_ok=False,
+        per_inverter={
+            "INV-A": InverterHealth(name="INV-A", inverter_ok=True, reason=None, reading=None, fault_code=None),
+        },
+        reason="Aggregate system failure",
+        fault_code="system_failure",
+    )
+
+    alerts = evaluate_alerts(health)
+
+    assert len(alerts) == 1
+    assert alerts[0].inverter_name == "SYSTEM"
+    assert alerts[0].fault_code == "system_failure"
+    assert "Aggregate system failure" in alerts[0].message
+
+
+def test_corrupted_last_alerted_causes_immediate_re_emit():
+    """A corrupted last_alerted timestamp in state should be treated as never-alerted, re-emitting immediately."""
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+        identical_alert_gate_minutes=60,
+    )
+    t0 = datetime(2024, 6, 1, 12, 0, 0)
+    unhealthy = _health(system_ok=False)
+
+    # First run — establishes the incident with a valid last_alerted
+    alerts, _ = mgr.build_notification_batch(now=t0, health=unhealthy, optimizer_mismatches=[])
+    assert len(alerts) == 1
+
+    # Corrupt the last_alerted field directly in state
+    incidents = state.get("open_alert_incidents", {})
+    incidents["INV-A"]["last_alerted"] = "not-a-valid-datetime"
+    state.set("open_alert_incidents", incidents)
+
+    # Second run 5 minutes later — normally suppressed by the 60-min gate,
+    # but corruption causes _parse_dt to return None, which re-emits immediately
+    alerts, _ = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=5), health=unhealthy, optimizer_mismatches=[]
+    )
+    assert len(alerts) == 1

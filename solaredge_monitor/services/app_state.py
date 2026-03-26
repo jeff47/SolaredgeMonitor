@@ -110,9 +110,6 @@ class AppState:
         if self._persist and self._conn:
             self._conn.commit()
 
-    def save(self) -> None:
-        self.flush()
-
     # ------------------------------------------------------------------
     def get(self, key: str, default=None):
         if not self._persist:

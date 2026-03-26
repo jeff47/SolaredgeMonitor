@@ -363,7 +363,7 @@ def main():
             log.info(
                 "Nighttime phase detected (%s); skipping Modbus polling until sunrise %s",
                 daylight_info.phase,
-                daylight_info.sunrise.astimezone().strftime("%H:%M"),
+                daylight_info.sunrise.astimezone(daylight_policy.timezone).strftime("%H:%M"),
             )
             snapshot_map = {}
             snapshot_items = []

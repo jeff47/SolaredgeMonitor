@@ -112,3 +112,74 @@ def test_daily_summary_runs_once(tmp_path):
     assert "Daily production for 2024-06-01:" in formatted
     assert "Site total (Modbus): 3.50 kWh" in formatted
     assert not svc.should_run(today, info)
+
+
+def test_daily_summary_negative_delta_falls_through_to_api(tmp_path):
+    """If the Modbus energy counter decreases (inverter reboot/reset), the negative delta is
+    discarded and the API value is used instead."""
+    api = FakeApi(
+        site_wh=None,
+        per_inv={"INV-A-123": 45000.0},
+        inventory=[],
+        enabled=True,
+    )
+    state = AppState(path=tmp_path / "state.db")
+    state.update_inverter_serial("INV-A", "INV-A-123")
+    # Yesterday's baseline is higher than today's reading — simulates a counter reset
+    state.set_summary_baseline("INV-A-123", date(2024, 5, 31), 5000.0)
+
+    svc = DailySummaryService(
+        inverter_cfgs=[InverterConfig(name="INV-A", host="h", port=1, unit=1)],
+        api_client=api,
+        log=LOG,
+        state=state,
+    )
+
+    today = date(2024, 6, 1)
+    snapshots = {
+        "INV-A": InverterSnapshot(
+            name="INV-A", serial="INV-A-123", model="SIM",
+            status=4, vendor_status=None, pac_w=0, vdc_v=0, idc_a=0,
+            total_wh=1000.0,  # lower than baseline of 5000 → negative delta
+            error=None, timestamp=datetime.now(),
+        )
+    }
+
+    summary = svc.run(today, modbus_snapshots=snapshots)
+
+    assert summary is not None
+    energies = dict(summary.per_inverter_wh)
+    assert energies["INV-A"] == 45000.0  # fell through to API
+    assert summary.site_wh_modbus is None  # no valid modbus energy
+
+
+def test_daily_summary_no_serial_yields_none_energy(tmp_path):
+    """When no serial can be resolved (no inventory, no cached serial, no snapshot serial),
+    energy stays None rather than crashing or producing a wrong value."""
+    api = FakeApi(site_wh=None, per_inv={}, inventory=[], enabled=False)
+    state = AppState(path=tmp_path / "state.db")
+    # No cached serials set
+
+    svc = DailySummaryService(
+        inverter_cfgs=[InverterConfig(name="INV-A", host="h", port=1, unit=1)],
+        api_client=api,
+        log=LOG,
+        state=state,
+    )
+
+    today = date(2024, 6, 1)
+    snapshots = {
+        "INV-A": InverterSnapshot(
+            name="INV-A", serial="", model="SIM",  # empty serial — as if Modbus read failed
+            status=4, vendor_status=None, pac_w=0, vdc_v=0, idc_a=0,
+            total_wh=5000.0,
+            error=None, timestamp=datetime.now(),
+        )
+    }
+
+    summary = svc.run(today, modbus_snapshots=snapshots)
+
+    assert summary is not None
+    energies = dict(summary.per_inverter_wh)
+    assert energies["INV-A"] is None
+    assert summary.site_wh_modbus is None

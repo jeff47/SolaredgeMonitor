@@ -38,7 +38,11 @@ class NotificationManager:
             self.pushover.send_recoveries(recovery_list)
 
         if not alerts_list:
-            if health is not None and not health.system_ok:
+            if health is None:
+                # No health evaluation was performed (e.g. all inverters unreachable);
+                # do not send a false success ping.
+                return
+            if not health.system_ok:
                 summary = self._health_failure_summary(health)
                 self.log.warning(
                     "No new alerts emitted, but system health is still failing; sending Healthchecks failure ping."

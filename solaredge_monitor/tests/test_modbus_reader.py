@@ -8,9 +8,13 @@ from solaredge_monitor.services import modbus_reader
 class DummyLog:
     def __init__(self):
         self.debug_messages = []
+        self.warning_messages = []
 
     def debug(self, msg, *args):
         self.debug_messages.append((msg, args))
+
+    def warning(self, msg, *args):
+        self.warning_messages.append((msg, args))
 
 
 def test_apply_scale_handles_valid_and_invalid_values():
@@ -35,15 +39,17 @@ def test_read_inverter_returns_none_when_connect_fails(monkeypatch):
             self.disconnected = True
 
     monkeypatch.setattr(modbus_reader, "ModbusInverter", FakeClient)
+    log = DummyLog()
     reader = modbus_reader.ModbusReader(
         SimpleNamespace(inverters=[], retries=2, timeout=1.5),
-        DummyLog(),
+        log,
     )
 
     result = reader.read_inverter(SimpleNamespace(name="INV-A", host="h", port=1502, unit=1))
 
     assert result is None
     assert instances[0].disconnected is True
+    assert any("INV-A" in msg for msg, _ in log.warning_messages)
 
 
 def test_read_inverter_scales_values_and_defaults_identity(monkeypatch):

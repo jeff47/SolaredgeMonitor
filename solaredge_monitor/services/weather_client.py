@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 import math
 
 import requests
@@ -51,7 +51,9 @@ def _nearest_index(times: list[str], target: datetime, tz: ZoneInfo) -> Optional
         else:
             deltas.append((idx, abs((dt - target_local).total_seconds())))
     deltas.sort(key=lambda x: x[1])
-    return deltas[0][0] if deltas else None
+    if not deltas or deltas[0][1] == float("inf"):
+        return None
+    return deltas[0][0]
 
 
 def _poa_irradiance(
@@ -134,7 +136,7 @@ def _resolve_per_inverter_capacity(
 @dataclass
 class WeatherClient:
     cfg: WeatherConfig
-    log: any
+    log: Any
     session: Optional[requests.Session] = None
 
     def __post_init__(self):

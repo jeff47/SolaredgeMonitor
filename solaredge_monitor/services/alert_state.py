@@ -167,19 +167,19 @@ class AlertStateManager:
             counters_changed = self._update_counters(counters, health) or counters_changed
             health_alerts = evaluate_alerts(health, now)
             alerts.extend(self._filter_by_consecutive(counters, health_alerts))
-        else:
-            for name, expected, actual in optimizer_mismatches_list:
-                actual_txt = "unknown" if actual is None else str(actual)
-                alerts.append(
-                    Alert(
-                        inverter_name=name,
-                        serial="CLOUD",
-                        fault_code="optimizer_mismatch",
-                        message=f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})",
-                        status=-1,
-                        pac_w=None,
-                    )
+
+        for name, expected, actual in optimizer_mismatches_list:
+            actual_txt = "unknown" if actual is None else str(actual)
+            alerts.append(
+                Alert(
+                    inverter_name=name,
+                    serial="CLOUD",
+                    fault_code="optimizer_mismatch",
+                    message=f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})",
+                    status=-1,
+                    pac_w=None,
                 )
+            )
 
         for msg in extra_messages_list:
             alerts.append(

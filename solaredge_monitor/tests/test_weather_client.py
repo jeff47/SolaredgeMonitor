@@ -92,6 +92,55 @@ def test_weather_disabled_short_circuits():
     assert client.fetch(now, invs, fallback_lat=0.0, fallback_lon=0.0) is None
 
 
+def test_nearest_index_returns_none_when_all_timestamps_unparseable():
+    """If all hourly timestamps are garbage, fetch() should return None values rather than
+    silently using index 0 (which would be midnight data)."""
+    payload = {
+        "timezone": "UTC",
+        "current": {
+            "time": "2024-01-01T10:00",
+            "temperature_2m": 10.0,
+            "cloud_cover": 50,
+            "weather_code": 3,
+        },
+        "hourly": {
+            "time": ["not-a-time", "also-bad"],
+            "shortwave_radiation": [999.0, 999.0],
+            "direct_normal_irradiance": [999.0, 999.0],
+            "diffuse_radiation": [999.0, 999.0],
+            "temperature_2m": [99.0, 99.0],
+            "cloud_cover": [99, 99],
+            "wind_speed_10m": [99.0, 99.0],
+        },
+    }
+
+    cfg = WeatherConfig(
+        enabled=True,
+        latitude=39.0,
+        longitude=-77.0,
+        tilt_deg=20.0,
+        azimuth_deg=180.0,
+        albedo=0.2,
+        array_kw_dc=18.0,
+        ac_capacity_kw=10.0,
+        dc_ac_derate=0.9,
+        noct_c=45.0,
+        temp_coeff_per_c=-0.0045,
+    )
+    invs = [InverterConfig(name="INV1", host="127.0.0.1")]
+    now = datetime(2024, 1, 1, 10, 0, tzinfo=ZoneInfo("UTC"))
+
+    client = WeatherClient(cfg, LOG, session=FakeSession(payload))
+    estimate = client.fetch(now, invs, fallback_lat=cfg.latitude, fallback_lon=cfg.longitude)
+
+    # Should still return an estimate (current data is fine), but hourly series
+    # values should all be None since no valid index could be found.
+    assert estimate is not None
+    assert estimate.snapshot.ghi_wm2 is None
+    assert estimate.snapshot.dni_wm2 is None
+    assert estimate.snapshot.diffuse_wm2 is None
+
+
 def test_weather_zero_when_sun_below_horizon():
     # If the sun is below the horizon, expected output should be zero even if the feed reports residual irradiance.
     payload = {

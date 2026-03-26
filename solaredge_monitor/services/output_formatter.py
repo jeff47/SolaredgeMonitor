@@ -101,8 +101,6 @@ def emit_json(
 
 
 def _format_weather_human(weather: WeatherEstimate, snapshot_items: Iterable[SnapshotItem]) -> list[str]:
-    if weather is None:
-        return []
     snap = weather.snapshot
     parts = []
     if snap.cloud_cover_pct is not None:
@@ -142,10 +140,11 @@ def emit_human(
     *,
     weather_estimate: WeatherEstimate | None = None,
 ) -> None:
+    items = list(snapshot_items)
     if weather_estimate:
-        for line in _format_weather_human(weather_estimate, snapshot_items):
+        for line in _format_weather_human(weather_estimate, items):
             print(line)
-    for name, snapshot in snapshot_items:
+    for name, snapshot in items:
         if snapshot is None:
             print(f"[{name}] OFFLINE: no Modbus data")
             continue

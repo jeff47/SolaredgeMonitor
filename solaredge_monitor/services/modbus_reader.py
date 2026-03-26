@@ -84,7 +84,7 @@ class ModbusReader:
 
         try:
             if not client.connect():
-                self.log.debug(f"{name}: modbus connect failed")
+                self.log.warning(f"{name}: Modbus connect failed (inverter unreachable?)")
                 return None
 
             # Identity
