@@ -160,6 +160,8 @@ class HealthEvaluator:
         if (
             low_vdc_threshold is not None
             and not dark_irradiance
+            and not sun_angle_suppressed
+            and not suppress_low_pac
             and reading.vdc_v is not None
             and reading.vdc_v < low_vdc_threshold
         ):
