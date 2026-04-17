@@ -183,7 +183,7 @@ def test_main_simulate_night_skips_modbus_and_notifications(monkeypatch, tmp_pat
     monkeypatch.setattr(
         main_module,
         "AlertStateManager",
-        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [])),
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [], False)),
     )
     monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "simulate", "--scenario", "sunset"])
@@ -310,7 +310,7 @@ def test_main_health_flow_reads_cloud_notifies_and_persists(monkeypatch, tmp_pat
         main_module,
         "NotificationManager",
         lambda *args, **kwargs: SimpleNamespace(
-            handle_alerts=lambda alerts, recoveries=None, health=None: notifier_calls.append((alerts, recoveries, health))
+            handle_alerts=lambda alerts, recoveries=None, health=None, has_active_health_incident=False: notifier_calls.append((alerts, recoveries, health))
         ),
     )
     monkeypatch.setattr(main_module, "HealthEvaluator", lambda *args, **kwargs: evaluator)
@@ -321,7 +321,7 @@ def test_main_health_flow_reads_cloud_notifies_and_persists(monkeypatch, tmp_pat
     monkeypatch.setattr(
         main_module,
         "AlertStateManager",
-        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([alert], [])),
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([alert], [], False)),
     )
     monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "health"])
@@ -419,7 +419,7 @@ def test_main_health_flow_passes_unhealthy_state_when_alerts_suppressed(monkeypa
         main_module,
         "NotificationManager",
         lambda *args, **kwargs: SimpleNamespace(
-            handle_alerts=lambda alerts, recoveries=None, health=None: notifier_calls.append((alerts, recoveries, health))
+            handle_alerts=lambda alerts, recoveries=None, health=None, has_active_health_incident=False: notifier_calls.append((alerts, recoveries, health))
         ),
     )
     monkeypatch.setattr(main_module, "HealthEvaluator", lambda *args, **kwargs: FakeEvaluator())
@@ -430,7 +430,7 @@ def test_main_health_flow_passes_unhealthy_state_when_alerts_suppressed(monkeypa
     monkeypatch.setattr(
         main_module,
         "AlertStateManager",
-        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [])),
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [], False)),
     )
     monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "health"])
@@ -547,7 +547,7 @@ def test_main_health_flow_uses_cached_serials_for_optimizer_lookup_when_modbus_i
     monkeypatch.setattr(
         main_module,
         "AlertStateManager",
-        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [])),
+        lambda *args, **kwargs: SimpleNamespace(build_notification_batch=lambda **kwargs: ([], [], False)),
     )
     monkeypatch.setattr(main_module, "WeatherClient", lambda *args, **kwargs: SimpleNamespace(enabled=False))
     monkeypatch.setattr("sys.argv", ["prog", "--config", "x.conf", "--quiet", "health"])

@@ -9,7 +9,7 @@ from solaredge_monitor.models.inverter import InverterSnapshot
 
 
 def _alerts(mgr, **kwargs):
-    alerts, recoveries = mgr.build_notification_batch(**kwargs)
+    alerts, recoveries, _ = mgr.build_notification_batch(**kwargs)
     assert recoveries == []
     return alerts
 
@@ -127,7 +127,7 @@ def test_consecutive_alerts_gate_and_reset():
     assert len(second) == 1  # second consecutive failure emits alert
 
     healthy = _health(system_ok=True)
-    cleared, recoveries = mgr.build_notification_batch(
+    cleared, recoveries, _ = mgr.build_notification_batch(
         now=datetime.now(),
         health=healthy,
         optimizer_mismatches=[],
@@ -156,7 +156,7 @@ def test_recovery_gate_requires_consecutive_healthy_samples():
     t0 = datetime(2024, 6, 1, 12, 0, 0)
 
     unhealthy = _health(system_ok=False)
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0,
         health=unhealthy,
         optimizer_mismatches=[],
@@ -164,7 +164,7 @@ def test_recovery_gate_requires_consecutive_healthy_samples():
     assert alerts == []
     assert recoveries == []
 
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=5),
         health=unhealthy,
         optimizer_mismatches=[],
@@ -174,7 +174,7 @@ def test_recovery_gate_requires_consecutive_healthy_samples():
 
     healthy = _health(system_ok=True)
     for minutes in (10, 15):
-        alerts, recoveries = mgr.build_notification_batch(
+        alerts, recoveries, _ = mgr.build_notification_batch(
             now=t0 + timedelta(minutes=minutes),
             health=healthy,
             optimizer_mismatches=[],
@@ -182,7 +182,7 @@ def test_recovery_gate_requires_consecutive_healthy_samples():
         assert alerts == []
         assert recoveries == []
 
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=20),
         health=healthy,
         optimizer_mismatches=[],
@@ -227,7 +227,7 @@ def test_fault_change_emits_immediately_and_recovery_is_reported():
     first_health.per_inverter["INV-A"].reason = "No Modbus data (offline?)"
     first_health.per_inverter["INV-A"].reading = None
     first_health.per_inverter["INV-A"].fault_code = "offline"
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0,
         health=first_health,
         optimizer_mismatches=[],
@@ -238,7 +238,7 @@ def test_fault_change_emits_immediately_and_recovery_is_reported():
     changed_health = _health(system_ok=False)
     changed_health.per_inverter["INV-A"].reason = "Low DC voltage Vdc=40.0 V (<50.0 V threshold)"
     changed_health.per_inverter["INV-A"].fault_code = "low_vdc"
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=10),
         health=changed_health,
         optimizer_mismatches=[],
@@ -247,7 +247,7 @@ def test_fault_change_emits_immediately_and_recovery_is_reported():
     assert recoveries == []
 
     healthy = _health(system_ok=True)
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=20),
         health=healthy,
         optimizer_mismatches=[],
@@ -266,7 +266,7 @@ def test_optimizer_mismatch_resolves_when_source_evaluated_empty():
     )
     t0 = datetime(2024, 6, 1, 12, 0, 0)
 
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0,
         health=None,
         optimizer_mismatches=[("INV-A", 10, 2)],
@@ -274,7 +274,7 @@ def test_optimizer_mismatch_resolves_when_source_evaluated_empty():
     assert len(alerts) == 1
     assert recoveries == []
 
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=5),
         health=None,
         optimizer_mismatches=[],
@@ -292,7 +292,7 @@ def test_system_message_resolves_when_source_evaluated_empty():
     )
     t0 = datetime(2024, 6, 1, 12, 0, 0)
 
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0,
         health=None,
         optimizer_mismatches=None,
@@ -301,7 +301,7 @@ def test_system_message_resolves_when_source_evaluated_empty():
     assert len(alerts) == 1
     assert recoveries == []
 
-    alerts, recoveries = mgr.build_notification_batch(
+    alerts, recoveries, _ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=5),
         health=None,
         optimizer_mismatches=None,
@@ -343,7 +343,7 @@ def test_corrupted_last_alerted_causes_immediate_re_emit():
     unhealthy = _health(system_ok=False)
 
     # First run — establishes the incident with a valid last_alerted
-    alerts, _ = mgr.build_notification_batch(now=t0, health=unhealthy, optimizer_mismatches=[])
+    alerts, _, __ = mgr.build_notification_batch(now=t0, health=unhealthy, optimizer_mismatches=[])
     assert len(alerts) == 1
 
     # Corrupt the last_alerted field directly in state
@@ -353,7 +353,7 @@ def test_corrupted_last_alerted_causes_immediate_re_emit():
 
     # Second run 5 minutes later — normally suppressed by the 60-min gate,
     # but corruption causes _parse_dt to return None, which re-emits immediately
-    alerts, _ = mgr.build_notification_batch(
+    alerts, _, __ = mgr.build_notification_batch(
         now=t0 + timedelta(minutes=5), health=unhealthy, optimizer_mismatches=[]
     )
     assert len(alerts) == 1

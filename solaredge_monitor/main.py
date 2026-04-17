@@ -137,7 +137,7 @@ def _compute_pac_alert_suppression(
     irradiance_below_floor = False
     if irr_floor is not None:
         irr_candidates = [v for v in (ghi, poa_max) if v is not None]
-        if irr_candidates and max(irr_candidates) <= irr_floor:
+        if irr_candidates and min(irr_candidates) <= irr_floor:
             irradiance_below_floor = True
 
     suppression: dict[str, bool] = {}
@@ -408,10 +408,17 @@ def main():
         sun_el = weather_estimate.snapshot.sun_elevation_deg if weather_estimate else None
         irradiance_wm2 = weather_estimate.snapshot.ghi_wm2 if weather_estimate else None
         irr_floor = app_cfg.health.alert_irradiance_floor_wm2
+        poa_wm2: float | None = None
+        if weather_estimate and weather_estimate.per_inverter:
+            poa_vals = [inv.poa_wm2 for inv in weather_estimate.per_inverter.values() if inv.poa_wm2 is not None]
+            if poa_vals:
+                poa_wm2 = max(poa_vals)
         dark_irradiance = (
             irr_floor is not None
-            and irradiance_wm2 is not None
-            and irradiance_wm2 <= irr_floor
+            and (
+                (irradiance_wm2 is not None and irradiance_wm2 <= irr_floor)
+                or (poa_wm2 is not None and poa_wm2 <= irr_floor)
+            )
         )
         capacity_map = _build_capacity_map(app_cfg, weather_estimate) if snapshot_map else {}
         thresholds = evaluator.derive_thresholds(snapshot_map.keys(), capacity_map) if snapshot_map else None
@@ -454,7 +461,7 @@ def main():
         elif se_client.enabled and daylight_info.skip_cloud and has_optimizer_expectations:
             log.info("SolarEdge API polling skipped at night (configuration).")
 
-        alerts, recoveries = alert_manager.build_notification_batch(
+        alerts, recoveries, has_active_health_incident = alert_manager.build_notification_batch(
             now=now,
             health=health,
             optimizer_mismatches=optimizer_mismatches,
@@ -476,7 +483,7 @@ def main():
                 "Modbus polling skipped; suppressing Healthchecks ping until monitoring resumes."
             )
         else:
-            notifier.handle_alerts(alerts, recoveries=recoveries, health=health)
+            notifier.handle_alerts(alerts, recoveries=recoveries, health=health, has_active_health_incident=has_active_health_incident)
 
         if (
             args.command == "health"

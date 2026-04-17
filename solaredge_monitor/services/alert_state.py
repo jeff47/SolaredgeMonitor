@@ -302,4 +302,8 @@ class AlertStateManager:
         if incidents_changed:
             self._save_incidents(incidents)
 
-        return emitted, recoveries
+        has_active_health_incident = any(
+            self._incident_source(inc) == "health"
+            for inc in incidents.values()
+        )
+        return emitted, recoveries, has_active_health_incident

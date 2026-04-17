@@ -174,7 +174,7 @@ def test_notification_manager_sends_failure_ping_for_suppressed_persistent_fault
         fault_code="inverter_faults",
     )
 
-    manager.handle_alerts([], health=health)
+    manager.handle_alerts([], health=health, has_active_health_incident=True)
 
     assert pushover_calls == []
     assert healthchecks_calls == [("failure", "SE10000H: No Modbus data (offline?)")]
@@ -241,6 +241,32 @@ def test_healthchecks_notifier_encodes_failure_message(monkeypatch):
     parsed = urlparse(opened[0])
     assert parsed.path.endswith("/ping/abc/fail")
     assert len(parse_qs(parsed.query)["msg"][0]) == 200
+
+
+def test_no_failure_ping_when_health_failing_but_no_active_incident():
+    """Health failing but below consecutive threshold: should send success ping, not failure."""
+    manager = NotificationManager(PushoverConfig(), HealthchecksConfig(), LOG)
+    healthchecks_calls: list[tuple[str, str]] = []
+
+    manager.pushover = SimpleNamespace(
+        send_alerts=lambda alerts, health=None: None,
+        send_recoveries=lambda recoveries: None,
+        send_message=lambda title, message: None,
+    )
+    manager.healthchecks = SimpleNamespace(
+        ping_success=lambda message="": healthchecks_calls.append(("success", message)),
+        ping_failure=lambda message="": healthchecks_calls.append(("failure", message)),
+    )
+
+    health = SystemHealth(
+        system_ok=False,
+        per_inverter={},
+        reason="low_pac",
+        fault_code="low_pac",
+    )
+    manager.handle_alerts([], health=health, has_active_health_incident=False)
+
+    assert healthchecks_calls == [("success", "system ok")], "Should ping success when no active incident yet"
 
 
 def test_handle_alerts_no_ping_when_health_is_none():

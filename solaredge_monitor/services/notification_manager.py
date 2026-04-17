@@ -27,6 +27,7 @@ class NotificationManager:
         *,
         recoveries: Optional[Iterable[RecoveryNotification]] = None,
         health: Optional[SystemHealth] = None,
+        has_active_health_incident: bool = False,
     ) -> None:
         """Send notifications based on the current alert list."""
 
@@ -42,7 +43,7 @@ class NotificationManager:
                 # No health evaluation was performed (e.g. all inverters unreachable);
                 # do not send a false success ping.
                 return
-            if not health.system_ok:
+            if not health.system_ok and has_active_health_incident:
                 summary = self._health_failure_summary(health)
                 self.log.warning(
                     "No new alerts emitted, but system health is still failing; sending Healthchecks failure ping."
