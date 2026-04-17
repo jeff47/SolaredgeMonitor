@@ -111,6 +111,9 @@ def _app_cfg(tmp_path, *, api_enabled: bool, skip_api_at_night: bool = False):
             debug_modules=[],
             structured_path=None,
             structured_enabled=False,
+            log_path=None,
+            log_max_bytes=0,
+            log_backup_count=0,
         ),
     )
 

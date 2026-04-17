@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 import sys
 from dataclasses import dataclass, asdict, is_dataclass
 from pathlib import Path
@@ -11,14 +12,28 @@ from typing import Any, Iterable
 def _default_logger_name() -> logging.Logger:
     return logging.getLogger("solaredge")
 
+_LOG_FMT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+_LOG_DATE_FMT = "%Y-%m-%d %H:%M:%S"
+
 
 class ConsoleLog:
     """Configure console logging for the application."""
 
-    def __init__(self, level: str = "INFO", quiet: bool = False, debug_modules: Iterable[str] | None = None):
+    def __init__(
+        self,
+        level: str = "INFO",
+        quiet: bool = False,
+        debug_modules: Iterable[str] | None = None,
+        log_path: str | None = None,
+        log_max_bytes: int = 10 * 1024 * 1024,
+        log_backup_count: int = 5,
+    ):
         self.level = level.upper()
         self.quiet = quiet
         self.debug_modules = list(debug_modules or [])
+        self.log_path = log_path
+        self.log_max_bytes = log_max_bytes
+        self.log_backup_count = log_backup_count
 
     def setup(self) -> logging.Logger:
         # Root logger handles all levels; handlers control visibility.
@@ -26,12 +41,26 @@ class ConsoleLog:
         root.handlers.clear()
         root.setLevel(logging.DEBUG)
 
+        fmt = logging.Formatter(_LOG_FMT, datefmt=_LOG_DATE_FMT)
+
         if not self.quiet:
             handler = logging.StreamHandler(sys.stdout)
             handler.setLevel(getattr(logging, self.level, logging.INFO))
-            fmt = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-            handler.setFormatter(logging.Formatter(fmt, datefmt="%Y-%m-%d %H:%M:%S"))
+            handler.setFormatter(fmt)
             root.addHandler(handler)
+
+        if self.log_path:
+            path = Path(self.log_path).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                path,
+                maxBytes=self.log_max_bytes,
+                backupCount=self.log_backup_count,
+                encoding="utf-8",
+            )
+            file_handler.setLevel(getattr(logging, self.level, logging.INFO))
+            file_handler.setFormatter(fmt)
+            root.addHandler(file_handler)
 
         for name in self.debug_modules:
             logging.getLogger(name).setLevel(logging.DEBUG)

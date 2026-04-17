@@ -138,6 +138,9 @@ class LoggingConfig:
     debug_modules: list[str] = field(default_factory=list)
     structured_enabled: bool = False
     structured_path: str | None = None
+    log_path: str | None = None
+    log_max_bytes: int = 10 * 1024 * 1024
+    log_backup_count: int = 5
 
 
 @dataclass
@@ -433,6 +436,12 @@ class Config:
                 logging_kwargs["structured_enabled"] = _as_bool(logging_sec["structured_enabled"])
             if "structured_path" in logging_sec:
                 logging_kwargs["structured_path"] = logging_sec["structured_path"]
+            if "log_path" in logging_sec:
+                logging_kwargs["log_path"] = logging_sec["log_path"]
+            if "log_max_bytes" in logging_sec:
+                logging_kwargs["log_max_bytes"] = int(logging_sec["log_max_bytes"])
+            if "log_backup_count" in logging_sec:
+                logging_kwargs["log_backup_count"] = int(logging_sec["log_backup_count"])
         logging_cfg = LoggingConfig(**logging_kwargs)
 
         return AppConfig(

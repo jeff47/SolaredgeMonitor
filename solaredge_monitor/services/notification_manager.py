@@ -51,7 +51,7 @@ class NotificationManager:
                 self.healthchecks.ping_failure(summary)
                 return
 
-            self.log.info("No alerts detected; sending Healthchecks success ping.")
+            self.log.debug("No alerts detected; sending Healthchecks success ping.")
             self.healthchecks.ping_success("system ok")
             return
 

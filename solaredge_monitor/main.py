@@ -272,6 +272,9 @@ def main():
         level="DEBUG" if args.debug else app_cfg.logging.console_level,
         quiet=args.quiet or app_cfg.logging.console_quiet,
         debug_modules=app_cfg.logging.debug_modules,
+        log_path=app_cfg.logging.log_path,
+        log_max_bytes=app_cfg.logging.log_max_bytes,
+        log_backup_count=app_cfg.logging.log_backup_count,
     )
     log = console_logger.setup()
     structured_logger = StructuredLog(
@@ -361,7 +364,7 @@ def main():
         weather_estimate = None
 
         if daylight_info.skip_modbus:
-            log.info(
+            log.debug(
                 "Nighttime phase detected (%s); skipping Modbus polling until sunrise %s",
                 daylight_info.phase,
                 daylight_info.sunrise.astimezone(daylight_policy.timezone).strftime("%H:%M"),
@@ -459,7 +462,7 @@ def main():
                 optimizer_counts_by_serial,
             )
         elif se_client.enabled and daylight_info.skip_cloud and has_optimizer_expectations:
-            log.info("SolarEdge API polling skipped at night (configuration).")
+            log.debug("SolarEdge API polling skipped at night (configuration).")
 
         alerts, recoveries, has_active_health_incident = alert_manager.build_notification_batch(
             now=now,
@@ -479,7 +482,7 @@ def main():
                 )
 
         if daylight_info.skip_modbus:
-            log.info(
+            log.debug(
                 "Modbus polling skipped; suppressing Healthchecks ping until monitoring resumes."
             )
         else:
