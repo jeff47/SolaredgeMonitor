@@ -203,152 +203,157 @@ class AlertStateManager:
         optimizer_mismatches: Optional[Iterable[Tuple[str, int, Optional[int]]]] = None,
         extra_messages: Optional[Iterable[str]] = None,
     ) -> tuple[List[Alert], List[RecoveryNotification]]:
-        alerts: list[Alert] = []
-        recoveries: list[RecoveryNotification] = []
+        tx = self.state.transaction() if self.state else None
+        if tx is None:
+            from contextlib import nullcontext
+            tx = nullcontext()
+        with tx:
+            alerts: list[Alert] = []
+            recoveries: list[RecoveryNotification] = []
 
-        health_evaluated = health is not None
-        optimizer_evaluated = optimizer_mismatches is not None
-        extra_evaluated = extra_messages is not None
-        optimizer_mismatches_list = list(optimizer_mismatches or [])
-        extra_messages_list = list(extra_messages or [])
+            health_evaluated = health is not None
+            optimizer_evaluated = optimizer_mismatches is not None
+            extra_evaluated = extra_messages is not None
+            optimizer_mismatches_list = list(optimizer_mismatches or [])
+            extra_messages_list = list(extra_messages or [])
 
-        counters = self._load_counters()
-        recovery_counters = self._load_recovery_counters()
-        incidents = self._load_incidents()
-        counters_changed = False
-        recovery_counters_changed = False
-        incidents_changed = False
+            counters = self._load_counters()
+            recovery_counters = self._load_recovery_counters()
+            incidents = self._load_incidents()
+            counters_changed = False
+            recovery_counters_changed = False
+            incidents_changed = False
 
-        if health:
-            changed = self._update_counters(counters, recovery_counters, health)
-            counters_changed = changed or counters_changed
-            recovery_counters_changed = changed or recovery_counters_changed
-            health_alerts = evaluate_alerts(health, now)
-            alerts.extend(self._filter_by_consecutive(counters, health_alerts))
+            if health:
+                changed = self._update_counters(counters, recovery_counters, health)
+                counters_changed = changed or counters_changed
+                recovery_counters_changed = changed or recovery_counters_changed
+                health_alerts = evaluate_alerts(health, now)
+                alerts.extend(self._filter_by_consecutive(counters, health_alerts))
 
-        for name, expected, actual in optimizer_mismatches_list:
-            actual_txt = "unknown" if actual is None else str(actual)
-            alerts.append(
-                Alert(
-                    inverter_name=name,
-                    serial="CLOUD",
-                    fault_code="optimizer_mismatch",
-                    message=f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})",
-                    status=-1,
-                    pac_w=None,
+            for name, expected, actual in optimizer_mismatches_list:
+                actual_txt = "unknown" if actual is None else str(actual)
+                alerts.append(
+                    Alert(
+                        inverter_name=name,
+                        serial="CLOUD",
+                        fault_code="optimizer_mismatch",
+                        message=f"Optimizer count mismatch (expected {expected}, cloud={actual_txt})",
+                        status=-1,
+                        pac_w=None,
+                    )
                 )
-            )
 
-        for msg in extra_messages_list:
-            alerts.append(
-                Alert(
-                    inverter_name="SYSTEM",
-                    serial="SYSTEM",
-                    fault_code="system_message",
-                    message=msg,
-                    status=-1,
-                    pac_w=None,
+            for msg in extra_messages_list:
+                alerts.append(
+                    Alert(
+                        inverter_name="SYSTEM",
+                        serial="SYSTEM",
+                        fault_code="system_message",
+                        message=msg,
+                        status=-1,
+                        pac_w=None,
+                    )
                 )
-            )
 
-        emitted: list[Alert] = []
-        current_names = {alert.inverter_name for alert in alerts}
-        health_names = set(health.per_inverter.keys()) if health is not None else set()
+            emitted: list[Alert] = []
+            current_names = {alert.inverter_name for alert in alerts}
+            health_names = set(health.per_inverter.keys()) if health is not None else set()
 
-        for alert in alerts:
-            key = alert.inverter_name
-            fingerprint = alert.fault_code
-            incident = incidents.get(key)
-            if not incident or incident.get("fingerprint") != fingerprint:
-                incidents[key] = {
-                    "fingerprint": fingerprint,
-                    "serial": alert.serial,
-                    "fault_code": alert.fault_code,
-                    "message": alert.message,
-                    "status": alert.status,
-                    "first_seen": now.isoformat(),
-                    "last_seen": now.isoformat(),
-                    "last_alerted": now.isoformat(),
-                    "alert_count": 1,
-                }
+            for alert in alerts:
+                key = alert.inverter_name
+                fingerprint = alert.fault_code
+                incident = incidents.get(key)
+                if not incident or incident.get("fingerprint") != fingerprint:
+                    incidents[key] = {
+                        "fingerprint": fingerprint,
+                        "serial": alert.serial,
+                        "fault_code": alert.fault_code,
+                        "message": alert.message,
+                        "status": alert.status,
+                        "first_seen": now.isoformat(),
+                        "last_seen": now.isoformat(),
+                        "last_alerted": now.isoformat(),
+                        "alert_count": 1,
+                    }
+                    incidents_changed = True
+                    emitted.append(alert)
+                    self._persist_incident_open_or_update(
+                        key=key,
+                        incident=incidents[key],
+                        source=self._incident_source(incidents[key]),
+                        event_type="opened",
+                        now=now,
+                    )
+                    continue
+
+                incident["serial"] = alert.serial
+                incident["fault_code"] = alert.fault_code
+                incident["message"] = alert.message
+                incident["status"] = alert.status
+                incident["last_seen"] = now.isoformat()
+
+                if self._should_emit_repeat(now, incident):
+                    incident["last_alerted"] = now.isoformat()
+                    incident["alert_count"] = int(incident.get("alert_count", 1) or 1) + 1
+                    emitted.append(alert)
+                    self._persist_incident_open_or_update(
+                        key=key,
+                        incident=incident,
+                        source=self._incident_source(incident),
+                        event_type="repeat_alert",
+                        now=now,
+                    )
+                incidents[key] = incident
                 incidents_changed = True
-                emitted.append(alert)
-                self._persist_incident_open_or_update(
-                    key=key,
-                    incident=incidents[key],
-                    source=self._incident_source(incidents[key]),
-                    event_type="opened",
-                    now=now,
-                )
-                continue
 
-            incident["serial"] = alert.serial
-            incident["fault_code"] = alert.fault_code
-            incident["message"] = alert.message
-            incident["status"] = alert.status
-            incident["last_seen"] = now.isoformat()
-
-            if self._should_emit_repeat(now, incident):
-                incident["last_alerted"] = now.isoformat()
-                incident["alert_count"] = int(incident.get("alert_count", 1) or 1) + 1
-                emitted.append(alert)
-                self._persist_incident_open_or_update(
-                    key=key,
-                    incident=incident,
-                    source=self._incident_source(incident),
-                    event_type="repeat_alert",
-                    now=now,
+            for key in list(incidents.keys()):
+                if key in current_names:
+                    continue
+                incident = incidents[key]
+                source = self._incident_source(incident)
+                if source == "health":
+                    if not health_evaluated or key not in health_names:
+                        continue
+                    if recovery_counters.get(key, 0) < self.consecutive_recovery_required:
+                        continue
+                elif source == "optimizer":
+                    if not optimizer_evaluated:
+                        continue
+                elif source == "extra":
+                    if not extra_evaluated:
+                        continue
+                incident = incidents.pop(key)
+                recoveries.append(
+                    RecoveryNotification(
+                        inverter_name=key,
+                        serial=str(incident.get("serial") or key),
+                        fault_code=str(incident.get("fault_code") or "unknown_recovery"),
+                        message=self._format_recovery_message(incident, now),
+                        resolved_at=now,
+                        first_seen=self._parse_dt(incident.get("first_seen")),
+                    )
                 )
-            incidents[key] = incident
-            incidents_changed = True
+                if self.state:
+                    self.state.close_incident(
+                        incident_key=key,
+                        resolved_at=now.isoformat(),
+                        recovery_message=recoveries[-1].message,
+                        event_type="recovered",
+                        payload={
+                            "source": source,
+                            "fault_code": incident.get("fault_code"),
+                        },
+                    )
+                incidents_changed = True
 
-        for key in list(incidents.keys()):
-            if key in current_names:
-                continue
-            incident = incidents[key]
-            source = self._incident_source(incident)
-            if source == "health":
-                if not health_evaluated or key not in health_names:
-                    continue
-                if recovery_counters.get(key, 0) < self.consecutive_recovery_required:
-                    continue
-            elif source == "optimizer":
-                if not optimizer_evaluated:
-                    continue
-            elif source == "extra":
-                if not extra_evaluated:
-                    continue
-            incident = incidents.pop(key)
-            recoveries.append(
-                RecoveryNotification(
-                    inverter_name=key,
-                    serial=str(incident.get("serial") or key),
-                    fault_code=str(incident.get("fault_code") or "unknown_recovery"),
-                    message=self._format_recovery_message(incident, now),
-                    resolved_at=now,
-                    first_seen=self._parse_dt(incident.get("first_seen")),
-                )
+            if counters_changed or recovery_counters_changed:
+                self._save_counters(counters, recovery_counters, now)
+            if incidents_changed:
+                self._save_incidents(incidents)
+
+            has_active_health_incident = any(
+                self._incident_source(inc) == "health"
+                for inc in incidents.values()
             )
-            if self.state:
-                self.state.close_incident(
-                    incident_key=key,
-                    resolved_at=now.isoformat(),
-                    recovery_message=recoveries[-1].message,
-                    event_type="recovered",
-                    payload={
-                        "source": source,
-                        "fault_code": incident.get("fault_code"),
-                    },
-                )
-            incidents_changed = True
-
-        if counters_changed or recovery_counters_changed:
-            self._save_counters(counters, recovery_counters, now)
-        if incidents_changed:
-            self._save_incidents(incidents)
-
-        has_active_health_incident = any(
-            self._incident_source(inc) == "health"
-            for inc in incidents.values()
-        )
-        return emitted, recoveries, has_active_health_incident
+            return emitted, recoveries, has_active_health_incident

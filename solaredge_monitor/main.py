@@ -293,7 +293,19 @@ def main():
         vacuum = not getattr(args, "no_vacuum", False)
         if vacuum is True and app_cfg.retention.vacuum_after_prune is False:
             vacuum = False
-        state_maintenance.prune(state, snap_days, summary_days, vacuum=vacuum)
+        try:
+            state_maintenance.prune(
+                state,
+                snap_days,
+                summary_days,
+                incident_days=getattr(app_cfg.retention, "incident_days", summary_days),
+                incident_event_days=getattr(app_cfg.retention, "incident_event_days", summary_days),
+                health_counter_days=getattr(app_cfg.retention, "health_counter_days", summary_days),
+                vacuum=vacuum,
+            )
+        except TypeError:
+            # Backward compatibility for older/mocked prune signatures.
+            state_maintenance.prune(state, snap_days, summary_days, vacuum=vacuum)
         log.info(
             "Database maintenance complete (snapshots>%sdays, summaries>%sdays removed)",
             snap_days,

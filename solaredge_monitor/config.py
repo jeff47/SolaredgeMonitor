@@ -111,6 +111,9 @@ class SimulationConfig:
 class RetentionConfig:
     snapshot_days: int = 30
     summary_days: int = 90
+    incident_days: int = 180
+    incident_event_days: int = 365
+    health_counter_days: int = 30
     vacuum_after_prune: bool = True
 
 
@@ -385,6 +388,9 @@ class Config:
         retention_cfg = RetentionConfig(
             snapshot_days=int(retention_sec.get("snapshot_days", 30) or 30),
             summary_days=int(retention_sec.get("summary_days", 90) or 90),
+            incident_days=int(retention_sec.get("incident_days", 180) or 180),
+            incident_event_days=int(retention_sec.get("incident_event_days", 365) or 365),
+            health_counter_days=int(retention_sec.get("health_counter_days", 30) or 30),
             vacuum_after_prune=(retention_sec.get("vacuum_after_prune", "true").strip().lower() == "true")
             if retention_sec
             else True,

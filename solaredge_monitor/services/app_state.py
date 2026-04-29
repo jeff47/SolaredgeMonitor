@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Union, TYPE_CHECKING
@@ -35,6 +36,9 @@ class AppState:
             self._conn = sqlite3.connect(self.path)
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.execute("PRAGMA temp_store=MEMORY")
+            self._tx_depth = 0
             self._init_schema()
         else:
             self.path = None
@@ -47,6 +51,7 @@ class AppState:
                 "health_counters": {},
                 "open_incidents": {},
             }
+            self._tx_depth = 0
 
     # ------------------------------------------------------------------
     def _init_schema(self) -> None:
@@ -142,6 +147,18 @@ class AppState:
             ON incident_events(incident_id, event_ts)
             """,
             """
+            CREATE INDEX IF NOT EXISTS ix_incidents_status_fault_last_seen
+            ON incidents(status, fault_code, last_seen)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_incidents_inverter_status
+            ON incidents(inverter_name, status)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_incident_events_type_ts
+            ON incident_events(event_type, event_ts)
+            """,
+            """
             CREATE TABLE IF NOT EXISTS health_counters (
                 inverter_name TEXT PRIMARY KEY,
                 failure_streak INTEGER NOT NULL DEFAULT 0,
@@ -157,6 +174,30 @@ class AppState:
     # ------------------------------------------------------------------
     def flush(self) -> None:
         if self._persist and self._conn:
+            self._conn.commit()
+
+    @contextmanager
+    def transaction(self):
+        if not self._persist or not self._conn:
+            yield
+            return
+        outer = self._tx_depth == 0
+        if outer:
+            self._conn.execute("BEGIN")
+        self._tx_depth += 1
+        try:
+            yield
+            self._tx_depth -= 1
+            if outer:
+                self._conn.commit()
+        except Exception:
+            self._tx_depth -= 1
+            if outer:
+                self._conn.rollback()
+            raise
+
+    def _maybe_commit(self) -> None:
+        if self._persist and self._conn and self._tx_depth == 0:
             self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -425,25 +466,25 @@ class AppState:
                     "updated_at": updated_at,
                 }
             return
-        with self._conn:
-            for name, values in counters.items():
-                failure_streak, recovery_streak = values
-                self._conn.execute(
-                    """
-                    INSERT INTO health_counters(inverter_name, failure_streak, recovery_streak, updated_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(inverter_name) DO UPDATE SET
-                        failure_streak=excluded.failure_streak,
-                        recovery_streak=excluded.recovery_streak,
-                        updated_at=excluded.updated_at
-                    """,
-                    (
-                        str(name),
-                        int(failure_streak),
-                        int(recovery_streak),
-                        updated_at,
-                    ),
-                )
+        for name, values in counters.items():
+            failure_streak, recovery_streak = values
+            self._conn.execute(
+                """
+                INSERT INTO health_counters(inverter_name, failure_streak, recovery_streak, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(inverter_name) DO UPDATE SET
+                    failure_streak=excluded.failure_streak,
+                    recovery_streak=excluded.recovery_streak,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    str(name),
+                    int(failure_streak),
+                    int(recovery_streak),
+                    updated_at,
+                ),
+            )
+        self._maybe_commit()
 
     def get_open_incidents(self) -> dict[str, dict]:
         if not self._persist:
@@ -511,77 +552,77 @@ class AppState:
                 "source": source,
             }
             return
-        with self._conn:
-            row = self._conn.execute(
-                "SELECT id FROM incidents WHERE incident_key = ? AND status = 'open'",
-                (incident_key,),
-            ).fetchone()
-            if row:
-                incident_id = int(row["id"])
-                self._conn.execute(
-                    """
-                    UPDATE incidents
-                    SET inverter_name=?,
-                        serial=?,
-                        fault_code=?,
-                        fingerprint=?,
-                        message=?,
-                        last_seen=?,
-                        last_alerted=?,
-                        alert_count=?,
-                        source=?
-                    WHERE id=?
-                    """,
-                    (
-                        inverter_name,
-                        serial,
-                        fault_code,
-                        fingerprint,
-                        message,
-                        last_seen,
-                        last_alerted,
-                        alert_count,
-                        source,
-                        incident_id,
-                    ),
-                )
-            else:
-                cur = self._conn.execute(
-                    """
-                    INSERT INTO incidents(
-                        incident_key, inverter_name, serial, fault_code, fingerprint,
-                        status, message, first_seen, last_seen, last_alerted,
-                        alert_count, source
-                    ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        incident_key,
-                        inverter_name,
-                        serial,
-                        fault_code,
-                        fingerprint,
-                        message,
-                        first_seen,
-                        last_seen,
-                        last_alerted,
-                        int(alert_count),
-                        source,
-                    ),
-                )
-                incident_id = int(cur.lastrowid)
+        row = self._conn.execute(
+            "SELECT id FROM incidents WHERE incident_key = ? AND status = 'open'",
+            (incident_key,),
+        ).fetchone()
+        if row:
+            incident_id = int(row["id"])
             self._conn.execute(
                 """
-                INSERT INTO incident_events(incident_id, event_type, event_ts, message, payload_json)
-                VALUES (?, ?, ?, ?, ?)
+                UPDATE incidents
+                SET inverter_name=?,
+                    serial=?,
+                    fault_code=?,
+                    fingerprint=?,
+                    message=?,
+                    last_seen=?,
+                    last_alerted=?,
+                    alert_count=?,
+                    source=?
+                WHERE id=?
                 """,
                 (
-                    incident_id,
-                    event_type,
-                    event_ts,
+                    inverter_name,
+                    serial,
+                    fault_code,
+                    fingerprint,
                     message,
-                    json.dumps(payload) if payload is not None else None,
+                    last_seen,
+                    last_alerted,
+                    alert_count,
+                    source,
+                    incident_id,
                 ),
             )
+        else:
+            cur = self._conn.execute(
+                """
+                INSERT INTO incidents(
+                    incident_key, inverter_name, serial, fault_code, fingerprint,
+                    status, message, first_seen, last_seen, last_alerted,
+                    alert_count, source
+                ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    incident_key,
+                    inverter_name,
+                    serial,
+                    fault_code,
+                    fingerprint,
+                    message,
+                    first_seen,
+                    last_seen,
+                    last_alerted,
+                    int(alert_count),
+                    source,
+                ),
+            )
+            incident_id = int(cur.lastrowid)
+        self._conn.execute(
+            """
+            INSERT INTO incident_events(incident_id, event_type, event_ts, message, payload_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                incident_id,
+                event_type,
+                event_ts,
+                message,
+                json.dumps(payload) if payload is not None else None,
+            ),
+        )
+        self._maybe_commit()
 
     def close_incident(
         self,
@@ -596,35 +637,35 @@ class AppState:
             mem = self._memory.setdefault("open_incidents", {})
             mem.pop(incident_key, None)
             return
-        with self._conn:
-            row = self._conn.execute(
-                "SELECT id FROM incidents WHERE incident_key = ? AND status = 'open'",
-                (incident_key,),
-            ).fetchone()
-            if not row:
-                return
-            incident_id = int(row["id"])
-            self._conn.execute(
-                """
-                UPDATE incidents
-                SET status='closed', recovered_at=?, recovery_message=?, last_seen=?
-                WHERE id=?
-                """,
-                (resolved_at, recovery_message, resolved_at, incident_id),
-            )
-            self._conn.execute(
-                """
-                INSERT INTO incident_events(incident_id, event_type, event_ts, message, payload_json)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    incident_id,
-                    event_type,
-                    resolved_at,
-                    recovery_message,
-                    json.dumps(payload) if payload is not None else None,
-                ),
-            )
+        row = self._conn.execute(
+            "SELECT id FROM incidents WHERE incident_key = ? AND status = 'open'",
+            (incident_key,),
+        ).fetchone()
+        if not row:
+            return
+        incident_id = int(row["id"])
+        self._conn.execute(
+            """
+            UPDATE incidents
+            SET status='closed', recovered_at=?, recovery_message=?, last_seen=?
+            WHERE id=?
+            """,
+            (resolved_at, recovery_message, resolved_at, incident_id),
+        )
+        self._conn.execute(
+            """
+            INSERT INTO incident_events(incident_id, event_type, event_ts, message, payload_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                incident_id,
+                event_type,
+                resolved_at,
+                recovery_message,
+                json.dumps(payload) if payload is not None else None,
+            ),
+        )
+        self._maybe_commit()
 
     # ------------------------------------------------------------------
     def __del__(self):
