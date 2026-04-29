@@ -377,6 +377,16 @@ class AppState:
         )
         self._conn.commit()
 
+    def has_site_summary(self, day) -> bool:
+        day_key = _day_str(day)
+        if not self._persist:
+            return False
+        row = self._conn.execute(
+            "SELECT 1 FROM site_summaries WHERE day = ? LIMIT 1",
+            (day_key,),
+        ).fetchone()
+        return row is not None
+
     def get_health_counters(self) -> dict[str, tuple[int, int]]:
         if not self._persist:
             counters = self._memory.get("health_counters", {})

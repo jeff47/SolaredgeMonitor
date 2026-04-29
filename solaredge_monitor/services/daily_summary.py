@@ -34,10 +34,10 @@ class DailySummaryService:
 
     # ------------------------------------------------------------------
     def _has_run(self, day: date) -> bool:
-        return self.state.get("last_summary_date") == day.isoformat()
+        return self.state.has_site_summary(day)
 
     def mark_ran(self, day: date) -> None:
-        self.state.set("last_summary_date", day.isoformat())
+        _ = day
 
     # ------------------------------------------------------------------
     def should_run(self, day: date, daylight: DaylightInfo) -> bool:
