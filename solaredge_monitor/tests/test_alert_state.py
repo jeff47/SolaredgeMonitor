@@ -372,3 +372,84 @@ def test_corrupted_last_alerted_causes_immediate_re_emit():
         now=t0 + timedelta(minutes=5), health=unhealthy, optimizer_mismatches=[]
     )
     assert len(alerts) == 1
+
+
+def test_alert_manager_persisted_mode_writes_incident_tables(tmp_path):
+    state = AppState(path=tmp_path / "state.db")
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+        consecutive_required=2,
+    )
+    t0 = datetime(2026, 4, 28, 19, 20, 0)
+    unhealthy = _health(system_ok=False)
+
+    # First failure: gated, incident still opened in DB
+    alerts, recoveries, _ = mgr.build_notification_batch(
+        now=t0,
+        health=unhealthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert recoveries == []
+
+    # Second failure: emitted and recorded as repeat_alert
+    alerts, recoveries, _ = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=5),
+        health=unhealthy,
+        optimizer_mismatches=[],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    # Recovery closes the incident
+    healthy = _health(system_ok=True)
+    alerts, recoveries, _ = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=10),
+        health=healthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert len(recoveries) == 1
+
+    conn = state._conn
+    row = conn.execute(
+        "SELECT status, alert_count FROM incidents WHERE incident_key = 'INV-A'"
+    ).fetchone()
+    assert row["status"] == "closed"
+    assert int(row["alert_count"]) == 1
+
+    events = conn.execute(
+        "SELECT event_type FROM incident_events ORDER BY id"
+    ).fetchall()
+    assert [r["event_type"] for r in events] == ["opened", "recovered"]
+
+    counters = conn.execute(
+        "SELECT failure_streak, recovery_streak FROM health_counters WHERE inverter_name = 'INV-A'"
+    ).fetchone()
+    assert int(counters["failure_streak"]) == 0
+    assert int(counters["recovery_streak"]) >= 1
+
+
+def test_db_backed_state_ignores_stale_kv_keys(tmp_path):
+    state = AppState(path=tmp_path / "state.db")
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+        consecutive_required=2,
+    )
+    t0 = datetime(2026, 4, 28, 19, 20, 0)
+    unhealthy = _health(system_ok=False)
+
+    # Seed stale kv counters that would incorrectly bypass gating if still read.
+    state.set("health_alert_counters", {"INV-A": 999})
+    state.set("health_recovery_counters", {"INV-A": 999})
+    state.set("open_alert_incidents", {"INV-A": {"fault_code": "offline"}})
+
+    alerts, recoveries, _ = mgr.build_notification_batch(
+        now=t0,
+        health=unhealthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []  # proves stale kv wasn't used
+    assert recoveries == []

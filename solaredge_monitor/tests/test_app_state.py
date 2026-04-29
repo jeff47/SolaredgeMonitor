@@ -124,3 +124,21 @@ def test_incident_lifecycle_persistence(tmp_path):
         "SELECT event_type FROM incident_events ORDER BY id"
     ).fetchall()
     assert [row[0] for row in events] == ["opened", "repeat_alert", "recovered"]
+
+
+def test_health_counters_persist_across_reopen(tmp_path):
+    db_path = tmp_path / "state.db"
+    state = AppState(path=db_path)
+    state.upsert_health_counters(
+        {
+            "INV-A": (2, 0),
+            "INV-B": (0, 3),
+        },
+        updated_at="2026-04-29T08:00:00-04:00",
+    )
+    state.flush()
+
+    reopened = AppState(path=db_path)
+    counters = reopened.get_health_counters()
+    assert counters["INV-A"] == (2, 0)
+    assert counters["INV-B"] == (0, 3)
