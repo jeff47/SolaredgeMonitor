@@ -346,10 +346,25 @@ def test_corrupted_last_alerted_causes_immediate_re_emit():
     alerts, _, __ = mgr.build_notification_batch(now=t0, health=unhealthy, optimizer_mismatches=[])
     assert len(alerts) == 1
 
-    # Corrupt the last_alerted field directly in state
-    incidents = state.get("open_alert_incidents", {})
-    incidents["INV-A"]["last_alerted"] = "not-a-valid-datetime"
-    state.set("open_alert_incidents", incidents)
+    # Corrupt the last_alerted field directly in persisted open incidents
+    incidents = state.get_open_incidents()
+    incident = incidents["INV-A"]
+    state.upsert_open_incident(
+        incident_key="INV-A",
+        inverter_name="INV-A",
+        serial=str(incident.get("serial") or "INV-A"),
+        fault_code=str(incident.get("fault_code") or "fault_state:4"),
+        fingerprint=str(incident.get("fingerprint") or "fault_state:4"),
+        message=str(incident.get("message") or "Fault"),
+        first_seen=str(incident.get("first_seen") or t0.isoformat()),
+        last_seen=str(incident.get("last_seen") or t0.isoformat()),
+        last_alerted="not-a-valid-datetime",
+        alert_count=int(incident.get("alert_count", 1) or 1),
+        source=str(incident.get("source") or "health"),
+        event_type="test_corrupt_last_alerted",
+        event_ts=t0.isoformat(),
+        payload={"test": True},
+    )
 
     # Second run 5 minutes later — normally suppressed by the 60-min gate,
     # but corruption causes _parse_dt to return None, which re-emits immediately

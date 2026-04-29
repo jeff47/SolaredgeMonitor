@@ -46,51 +46,41 @@ class AlertStateManager:
     def _load_counters(self) -> dict[str, int]:
         if not self.state:
             return {}
-        raw = self.state.get("health_alert_counters", {}) or {}
-        counters: dict[str, int] = {}
-        if isinstance(raw, dict):
-            for key, value in raw.items():
-                try:
-                    counters[key] = int(value)
-                except (TypeError, ValueError):
-                    continue
-        return counters
+        return {
+            key: vals[0]
+            for key, vals in self.state.get_health_counters().items()
+        }
 
-    def _save_counters(self, counters: dict[str, int]) -> None:
+    def _save_counters(
+        self,
+        counters: dict[str, int],
+        recovery_counters: dict[str, int],
+        now: datetime,
+    ) -> None:
         if self.state is None:
             return
-        self.state.set("health_alert_counters", counters)
+        merged: dict[str, tuple[int, int]] = {}
+        names = set(counters.keys()) | set(recovery_counters.keys())
+        for name in names:
+            merged[name] = (int(counters.get(name, 0)), int(recovery_counters.get(name, 0)))
+        self.state.upsert_health_counters(merged, updated_at=now.isoformat())
 
     def _load_recovery_counters(self) -> dict[str, int]:
         if not self.state:
             return {}
-        raw = self.state.get("health_recovery_counters", {}) or {}
-        counters: dict[str, int] = {}
-        if isinstance(raw, dict):
-            for key, value in raw.items():
-                try:
-                    counters[key] = int(value)
-                except (TypeError, ValueError):
-                    continue
-        return counters
-
-    def _save_recovery_counters(self, counters: dict[str, int]) -> None:
-        if self.state is None:
-            return
-        self.state.set("health_recovery_counters", counters)
+        return {
+            key: vals[1]
+            for key, vals in self.state.get_health_counters().items()
+        }
 
     def _load_incidents(self) -> dict[str, dict]:
         if not self.state:
             return {}
-        raw = self.state.get("open_alert_incidents", {}) or {}
-        if not isinstance(raw, dict):
-            return {}
-        return {str(key): value for key, value in raw.items() if isinstance(value, dict)}
+        return self.state.get_open_incidents()
 
     def _save_incidents(self, incidents: dict[str, dict]) -> None:
-        if self.state is None:
-            return
-        self.state.set("open_alert_incidents", incidents)
+        # DB-backed incidents are persisted incrementally as they change.
+        _ = incidents
 
     def _update_counters(
         self,
@@ -352,10 +342,8 @@ class AlertStateManager:
                 )
             incidents_changed = True
 
-        if counters_changed:
-            self._save_counters(counters)
-        if recovery_counters_changed:
-            self._save_recovery_counters(recovery_counters)
+        if counters_changed or recovery_counters_changed:
+            self._save_counters(counters, recovery_counters, now)
         if incidents_changed:
             self._save_incidents(incidents)
 

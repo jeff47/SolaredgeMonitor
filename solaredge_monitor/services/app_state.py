@@ -44,6 +44,8 @@ class AppState:
                 "inverter_serials": {},
                 "latest_totals": {},
                 "summary_totals": {},
+                "health_counters": {},
+                "open_incidents": {},
             }
 
     # ------------------------------------------------------------------
@@ -138,6 +140,14 @@ class AppState:
             """
             CREATE INDEX IF NOT EXISTS ix_incident_events_incident_ts
             ON incident_events(incident_id, event_ts)
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS health_counters (
+                inverter_name TEXT PRIMARY KEY,
+                failure_streak INTEGER NOT NULL DEFAULT 0,
+                recovery_streak INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT
+            )
             """,
         ]
         for stmt in stmts:
@@ -367,6 +377,97 @@ class AppState:
         )
         self._conn.commit()
 
+    def get_health_counters(self) -> dict[str, tuple[int, int]]:
+        if not self._persist:
+            counters = self._memory.get("health_counters", {})
+            out: dict[str, tuple[int, int]] = {}
+            for name, values in counters.items():
+                if not isinstance(values, dict):
+                    continue
+                out[str(name)] = (
+                    int(values.get("failure_streak", 0) or 0),
+                    int(values.get("recovery_streak", 0) or 0),
+                )
+            return out
+        cur = self._conn.execute(
+            "SELECT inverter_name, failure_streak, recovery_streak FROM health_counters"
+        )
+        out: dict[str, tuple[int, int]] = {}
+        for row in cur.fetchall():
+            out[str(row["inverter_name"])] = (
+                int(row["failure_streak"] or 0),
+                int(row["recovery_streak"] or 0),
+            )
+        return out
+
+    def upsert_health_counters(
+        self,
+        counters: Mapping[str, tuple[int, int]],
+        updated_at: Optional[str] = None,
+    ) -> None:
+        if not self._persist:
+            mem = self._memory.setdefault("health_counters", {})
+            for name, values in counters.items():
+                failure_streak, recovery_streak = values
+                mem[str(name)] = {
+                    "failure_streak": int(failure_streak),
+                    "recovery_streak": int(recovery_streak),
+                    "updated_at": updated_at,
+                }
+            return
+        with self._conn:
+            for name, values in counters.items():
+                failure_streak, recovery_streak = values
+                self._conn.execute(
+                    """
+                    INSERT INTO health_counters(inverter_name, failure_streak, recovery_streak, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(inverter_name) DO UPDATE SET
+                        failure_streak=excluded.failure_streak,
+                        recovery_streak=excluded.recovery_streak,
+                        updated_at=excluded.updated_at
+                    """,
+                    (
+                        str(name),
+                        int(failure_streak),
+                        int(recovery_streak),
+                        updated_at,
+                    ),
+                )
+
+    def get_open_incidents(self) -> dict[str, dict]:
+        if not self._persist:
+            raw = self._memory.get("open_incidents", {})
+            return {
+                str(k): dict(v)
+                for k, v in raw.items()
+                if isinstance(v, dict)
+            }
+        cur = self._conn.execute(
+            """
+            SELECT incident_key, serial, fault_code, fingerprint, message, status,
+                   first_seen, last_seen, last_alerted, alert_count, source
+            FROM incidents
+            WHERE status='open'
+            """
+        )
+        incidents: dict[str, dict] = {}
+        for row in cur.fetchall():
+            key = str(row["incident_key"])
+            incidents[key] = {
+                "serial": row["serial"],
+                "fault_code": row["fault_code"],
+                "fingerprint": row["fingerprint"],
+                "message": row["message"],
+                "status": row["status"],
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+                "last_alerted": row["last_alerted"],
+                "alert_count": int(row["alert_count"] or 0),
+                "source": row["source"],
+            }
+        return incidents
+
     def upsert_open_incident(
         self,
         *,
@@ -386,6 +487,19 @@ class AppState:
         payload: Optional[dict] = None,
     ) -> None:
         if not self._persist:
+            mem = self._memory.setdefault("open_incidents", {})
+            mem[incident_key] = {
+                "fingerprint": fingerprint,
+                "serial": serial,
+                "fault_code": fault_code,
+                "message": message,
+                "status": "open",
+                "first_seen": first_seen,
+                "last_seen": last_seen,
+                "last_alerted": last_alerted,
+                "alert_count": int(alert_count),
+                "source": source,
+            }
             return
         with self._conn:
             row = self._conn.execute(
@@ -469,6 +583,8 @@ class AppState:
         payload: Optional[dict] = None,
     ) -> None:
         if not self._persist:
+            mem = self._memory.setdefault("open_incidents", {})
+            mem.pop(incident_key, None)
             return
         with self._conn:
             row = self._conn.execute(
