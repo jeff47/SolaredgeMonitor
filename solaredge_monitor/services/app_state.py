@@ -100,6 +100,45 @@ class AppState:
                 site_wh_api REAL
             )
             """,
+            """
+            CREATE TABLE IF NOT EXISTS incidents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                incident_key TEXT NOT NULL,
+                inverter_name TEXT NOT NULL,
+                serial TEXT,
+                fault_code TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                status TEXT NOT NULL,
+                message TEXT,
+                first_seen TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                last_alerted TEXT,
+                alert_count INTEGER NOT NULL DEFAULT 0,
+                source TEXT NOT NULL,
+                recovered_at TEXT,
+                recovery_message TEXT
+            )
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_incidents_open
+            ON incidents(incident_key, status)
+            WHERE status='open'
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS incident_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                incident_id INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                event_ts TEXT NOT NULL,
+                message TEXT,
+                payload_json TEXT,
+                FOREIGN KEY(incident_id) REFERENCES incidents(id)
+            )
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS ix_incident_events_incident_ts
+            ON incident_events(incident_id, event_ts)
+            """,
         ]
         for stmt in stmts:
             self._conn.execute(stmt)
@@ -327,6 +366,139 @@ class AppState:
             (day_key, recorded_at, site_wh_modbus, site_wh_api),
         )
         self._conn.commit()
+
+    def upsert_open_incident(
+        self,
+        *,
+        incident_key: str,
+        inverter_name: str,
+        serial: str,
+        fault_code: str,
+        fingerprint: str,
+        message: str,
+        first_seen: str,
+        last_seen: str,
+        last_alerted: Optional[str],
+        alert_count: int,
+        source: str,
+        event_type: str,
+        event_ts: str,
+        payload: Optional[dict] = None,
+    ) -> None:
+        if not self._persist:
+            return
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT id FROM incidents WHERE incident_key = ? AND status = 'open'",
+                (incident_key,),
+            ).fetchone()
+            if row:
+                incident_id = int(row["id"])
+                self._conn.execute(
+                    """
+                    UPDATE incidents
+                    SET inverter_name=?,
+                        serial=?,
+                        fault_code=?,
+                        fingerprint=?,
+                        message=?,
+                        last_seen=?,
+                        last_alerted=?,
+                        alert_count=?,
+                        source=?
+                    WHERE id=?
+                    """,
+                    (
+                        inverter_name,
+                        serial,
+                        fault_code,
+                        fingerprint,
+                        message,
+                        last_seen,
+                        last_alerted,
+                        alert_count,
+                        source,
+                        incident_id,
+                    ),
+                )
+            else:
+                cur = self._conn.execute(
+                    """
+                    INSERT INTO incidents(
+                        incident_key, inverter_name, serial, fault_code, fingerprint,
+                        status, message, first_seen, last_seen, last_alerted,
+                        alert_count, source
+                    ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        incident_key,
+                        inverter_name,
+                        serial,
+                        fault_code,
+                        fingerprint,
+                        message,
+                        first_seen,
+                        last_seen,
+                        last_alerted,
+                        int(alert_count),
+                        source,
+                    ),
+                )
+                incident_id = int(cur.lastrowid)
+            self._conn.execute(
+                """
+                INSERT INTO incident_events(incident_id, event_type, event_ts, message, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    incident_id,
+                    event_type,
+                    event_ts,
+                    message,
+                    json.dumps(payload) if payload is not None else None,
+                ),
+            )
+
+    def close_incident(
+        self,
+        *,
+        incident_key: str,
+        resolved_at: str,
+        recovery_message: str,
+        event_type: str = "recovered",
+        payload: Optional[dict] = None,
+    ) -> None:
+        if not self._persist:
+            return
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT id FROM incidents WHERE incident_key = ? AND status = 'open'",
+                (incident_key,),
+            ).fetchone()
+            if not row:
+                return
+            incident_id = int(row["id"])
+            self._conn.execute(
+                """
+                UPDATE incidents
+                SET status='closed', recovered_at=?, recovery_message=?, last_seen=?
+                WHERE id=?
+                """,
+                (resolved_at, recovery_message, resolved_at, incident_id),
+            )
+            self._conn.execute(
+                """
+                INSERT INTO incident_events(incident_id, event_type, event_ts, message, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    incident_id,
+                    event_type,
+                    resolved_at,
+                    recovery_message,
+                    json.dumps(payload) if payload is not None else None,
+                ),
+            )
 
     # ------------------------------------------------------------------
     def __del__(self):

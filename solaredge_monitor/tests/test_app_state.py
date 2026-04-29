@@ -70,3 +70,57 @@ def test_record_site_summary(tmp_path):
     conn = sqlite3.connect(db_path)
     row = conn.execute("SELECT site_wh_modbus, site_wh_api FROM site_summaries").fetchone()
     assert row == (1000.0, 900.0)
+
+
+def test_incident_lifecycle_persistence(tmp_path):
+    db_path = tmp_path / "state.db"
+    state = AppState(path=db_path)
+
+    state.upsert_open_incident(
+        incident_key="INV-A",
+        inverter_name="INV-A",
+        serial="SER123",
+        fault_code="low_pac",
+        fingerprint="low_pac",
+        message="Producing but PAC low",
+        first_seen="2026-04-28T19:20:00-04:00",
+        last_seen="2026-04-28T19:20:00-04:00",
+        last_alerted="2026-04-28T19:20:00-04:00",
+        alert_count=1,
+        source="health",
+        event_type="opened",
+        event_ts="2026-04-28T19:20:00-04:00",
+        payload={"status": 4},
+    )
+    state.upsert_open_incident(
+        incident_key="INV-A",
+        inverter_name="INV-A",
+        serial="SER123",
+        fault_code="low_pac",
+        fingerprint="low_pac",
+        message="Producing but PAC still low",
+        first_seen="2026-04-28T19:20:00-04:00",
+        last_seen="2026-04-28T19:25:00-04:00",
+        last_alerted="2026-04-28T19:25:00-04:00",
+        alert_count=2,
+        source="health",
+        event_type="repeat_alert",
+        event_ts="2026-04-28T19:25:00-04:00",
+        payload={"status": 4},
+    )
+    state.close_incident(
+        incident_key="INV-A",
+        resolved_at="2026-04-28T19:40:00-04:00",
+        recovery_message="Recovered after 0:20:00: Producing but PAC low",
+    )
+
+    conn = sqlite3.connect(db_path)
+    incident = conn.execute(
+        "SELECT status, alert_count, recovered_at FROM incidents WHERE incident_key='INV-A'"
+    ).fetchone()
+    assert incident == ("closed", 2, "2026-04-28T19:40:00-04:00")
+
+    events = conn.execute(
+        "SELECT event_type FROM incident_events ORDER BY id"
+    ).fetchall()
+    assert [row[0] for row in events] == ["opened", "repeat_alert", "recovered"]

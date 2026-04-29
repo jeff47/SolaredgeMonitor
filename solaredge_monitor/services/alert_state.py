@@ -173,6 +173,38 @@ class AlertStateManager:
             return "extra"
         return "health"
 
+    def _persist_incident_open_or_update(
+        self,
+        *,
+        key: str,
+        incident: dict,
+        source: str,
+        event_type: str,
+        now: datetime,
+    ) -> None:
+        if not self.state:
+            return
+        self.state.upsert_open_incident(
+            incident_key=key,
+            inverter_name=key,
+            serial=str(incident.get("serial") or key),
+            fault_code=str(incident.get("fault_code") or "unknown_fault"),
+            fingerprint=str(incident.get("fingerprint") or ""),
+            message=str(incident.get("message") or ""),
+            first_seen=str(incident.get("first_seen") or now.isoformat()),
+            last_seen=str(incident.get("last_seen") or now.isoformat()),
+            last_alerted=incident.get("last_alerted"),
+            alert_count=int(incident.get("alert_count", 0) or 0),
+            source=source,
+            event_type=event_type,
+            event_ts=now.isoformat(),
+            payload={
+                "status": incident.get("status"),
+                "source": source,
+                "fault_code": incident.get("fault_code"),
+            },
+        )
+
     def build_notification_batch(
         self,
         *,
@@ -251,6 +283,13 @@ class AlertStateManager:
                 }
                 incidents_changed = True
                 emitted.append(alert)
+                self._persist_incident_open_or_update(
+                    key=key,
+                    incident=incidents[key],
+                    source=self._incident_source(incidents[key]),
+                    event_type="opened",
+                    now=now,
+                )
                 continue
 
             incident["serial"] = alert.serial
@@ -263,6 +302,13 @@ class AlertStateManager:
                 incident["last_alerted"] = now.isoformat()
                 incident["alert_count"] = int(incident.get("alert_count", 1) or 1) + 1
                 emitted.append(alert)
+                self._persist_incident_open_or_update(
+                    key=key,
+                    incident=incident,
+                    source=self._incident_source(incident),
+                    event_type="repeat_alert",
+                    now=now,
+                )
             incidents[key] = incident
             incidents_changed = True
 
@@ -293,6 +339,17 @@ class AlertStateManager:
                     first_seen=self._parse_dt(incident.get("first_seen")),
                 )
             )
+            if self.state:
+                self.state.close_incident(
+                    incident_key=key,
+                    resolved_at=now.isoformat(),
+                    recovery_message=recoveries[-1].message,
+                    event_type="recovered",
+                    payload={
+                        "source": source,
+                        "fault_code": incident.get("fault_code"),
+                    },
+                )
             incidents_changed = True
 
         if counters_changed:
