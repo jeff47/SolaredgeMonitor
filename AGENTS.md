@@ -25,6 +25,11 @@
 - Structured JSONL logs can include inverter readings, alerts, and raw cloud payloads. Inspect only the fields needed for diagnosis and avoid dumping sensitive payloads.
 - When adding a setting, update `HealthConfig` and its parser, add it to the example configuration where appropriate, and test parsing.
 
+## Live Monitoring
+
+- On the current host, `/etc/crontab` runs `/usr/bin/python3 -m solaredge_monitor.main --config solaredge_monitor.conf health` every five minutes as `jeff`, from the repository checkout, with output appended to `solaredge_monitor.log`.
+- Each cron invocation starts a fresh process, so changes in that checkout and its local config take effect on the next run; no service restart or push is needed for this host. Recheck `/etc/crontab` if the deployment setup changes.
+
 ## Validation
 
 - Run focused tests for the changed behavior, then run the full suite with `pytest -q`.
