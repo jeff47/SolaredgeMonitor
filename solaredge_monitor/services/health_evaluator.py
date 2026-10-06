@@ -320,6 +320,10 @@ class HealthEvaluator:
         # If any inverter has a NON-producing status (2,3,5,6,7),
         # low-light/cloudy logic must NOT override it.
         sun_angle_suppressed = self._sun_angle_suppressed(sun_elevation_deg)
+        peer_mismatch_sun_suppressed = self._peer_mismatch_sun_angle_suppressed(
+            sun_elevation_deg,
+            sun_azimuth_deg,
+        )
         abnormal_status_present = any(
             inv.reading
             and inv.reading.status not in (4,)
@@ -348,6 +352,7 @@ class HealthEvaluator:
                 per_inverter=per_inverter,
                 reason=None if system_ok else "; ".join(f"{b.name}: {b.reason}" for b in bad),
                 fault_code=None if system_ok else "inverter_faults",
+                peer_comparison_suppressed=peer_mismatch_sun_suppressed,
             )
 
         # --------------------------------------------------------------
@@ -376,6 +381,7 @@ class HealthEvaluator:
                         per_inverter=per_inverter,
                         reason=None,
                         fault_code=None,
+                        peer_comparison_suppressed=peer_mismatch_sun_suppressed,
                     )
 
         # --------------------------------------------------------------
@@ -402,15 +408,12 @@ class HealthEvaluator:
                     per_inverter=per_inverter,
                     reason=None if system_ok else "; ".join(f"{b.name}: {b.reason}" for b in bad),
                     fault_code=None if system_ok else "inverter_faults",
+                    peer_comparison_suppressed=peer_mismatch_sun_suppressed,
                 )
 
         # --------------------------------------------------------------
         # 5. Full peer comparison
         # --------------------------------------------------------------
-        peer_mismatch_sun_suppressed = self._peer_mismatch_sun_angle_suppressed(
-            sun_elevation_deg,
-            sun_azimuth_deg,
-        )
         if not peer_mismatch_sun_suppressed:
             self._peer_compare(per_inverter, thresholds)
 
@@ -428,6 +431,7 @@ class HealthEvaluator:
                 per_inverter=per_inverter,
                 reason="; ".join(f"{b.name}: {b.reason}" for b in bad),
                 fault_code="inverter_faults",
+                peer_comparison_suppressed=peer_mismatch_sun_suppressed,
             )
 
         return SystemHealth(
@@ -435,6 +439,7 @@ class HealthEvaluator:
             per_inverter=per_inverter,
             reason=None,
             fault_code=None,
+            peer_comparison_suppressed=peer_mismatch_sun_suppressed,
         )
 
     # ----------------------------------------------------------------------

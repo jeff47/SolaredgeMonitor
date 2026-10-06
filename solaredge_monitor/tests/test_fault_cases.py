@@ -77,9 +77,13 @@ def test_directional_sun_angle_suppresses_peer_mismatch():
             capacity_by_name={"INV-A": 1.0, "INV-B": 1.0},
         )
 
-    assert evaluate_pair(3.9, 100.0).system_ok
+    morning_suppressed = evaluate_pair(3.9, 100.0)
+    assert morning_suppressed.system_ok
+    assert morning_suppressed.peer_comparison_suppressed
     assert evaluate_pair(4.1, 100.0).per_inverter["INV-B"].fault_code == "peer_mismatch"
-    assert evaluate_pair(23.9, 250.0).system_ok
+    evening_suppressed = evaluate_pair(23.9, 250.0)
+    assert evening_suppressed.system_ok
+    assert evening_suppressed.peer_comparison_suppressed
     assert evaluate_pair(24.1, 250.0).per_inverter["INV-B"].fault_code == "peer_mismatch"
 
     fault_reader = MockModbusReader({

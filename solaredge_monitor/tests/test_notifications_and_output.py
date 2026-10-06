@@ -142,6 +142,25 @@ def test_notification_manager_sends_recovery_then_success_ping():
     assert healthchecks_calls == [("success", "system ok")]
 
 
+def test_notification_manager_skips_success_ping_for_suppressed_peer_check():
+    manager = NotificationManager(PushoverConfig(), HealthchecksConfig(), LOG)
+    healthchecks_calls: list[tuple[str, str]] = []
+    manager.healthchecks = SimpleNamespace(
+        ping_success=lambda message="": healthchecks_calls.append(("success", message)),
+        ping_failure=lambda message="": healthchecks_calls.append(("failure", message)),
+    )
+
+    health = SystemHealth(
+        system_ok=True,
+        per_inverter={},
+        reason=None,
+        peer_comparison_suppressed=True,
+    )
+    manager.handle_alerts([], health=health)
+
+    assert healthchecks_calls == []
+
+
 def test_notification_manager_sends_failure_ping_for_suppressed_persistent_fault():
     manager = NotificationManager(PushoverConfig(), HealthchecksConfig(), LOG)
     pushover_calls: list[tuple[str, object]] = []

@@ -87,11 +87,19 @@ class AlertStateManager:
         counters: dict[str, int],
         recovery_counters: dict[str, int],
         health: SystemHealth,
+        incidents: dict[str, dict],
     ) -> bool:
         changed = False
         for name, inv_state in health.per_inverter.items():
             key = name
             if inv_state.inverter_ok:
+                incident = incidents.get(key)
+                if (
+                    health.peer_comparison_suppressed
+                    and incident
+                    and incident.get("fault_code") == "peer_mismatch"
+                ):
+                    continue
                 if counters.get(key, 0) != 0:
                     counters[key] = 0
                     changed = True
@@ -225,7 +233,12 @@ class AlertStateManager:
             incidents_changed = False
 
             if health:
-                changed = self._update_counters(counters, recovery_counters, health)
+                changed = self._update_counters(
+                    counters,
+                    recovery_counters,
+                    health,
+                    incidents,
+                )
                 counters_changed = changed or counters_changed
                 recovery_counters_changed = changed or recovery_counters_changed
                 health_alerts = evaluate_alerts(health, now)
@@ -314,6 +327,11 @@ class AlertStateManager:
                 source = self._incident_source(incident)
                 if source == "health":
                     if not health_evaluated or key not in health_names:
+                        continue
+                    if (
+                        health.peer_comparison_suppressed
+                        and incident.get("fault_code") == "peer_mismatch"
+                    ):
                         continue
                     if recovery_counters.get(key, 0) < self.consecutive_recovery_required:
                         continue

@@ -50,6 +50,11 @@ class NotificationManager:
                 )
                 self.healthchecks.ping_failure(summary)
                 return
+            if health.peer_comparison_suppressed:
+                self.log.debug(
+                    "Peer comparison was suppressed by sun angle; skipping Healthchecks success ping."
+                )
+                return
 
             self.log.debug("No alerts detected; sending Healthchecks success ping.")
             self.healthchecks.ping_success("system ok")

@@ -19,3 +19,4 @@ class SystemHealth:
     per_inverter: Dict[str, InverterHealth]
     reason: Optional[str]
     fault_code: Optional[str] = None
+    peer_comparison_suppressed: bool = False

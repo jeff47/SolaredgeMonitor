@@ -191,6 +191,58 @@ def test_recovery_gate_requires_consecutive_healthy_samples():
     assert len(recoveries) == 1
 
 
+def test_angle_suppressed_peer_mismatch_does_not_recover_until_rechecked():
+    state = AppState(persist=False)
+    mgr = AlertStateManager(
+        log=SimpleNamespace(debug=lambda *args, **kwargs: None),
+        state=state,
+        consecutive_recovery_required=2,
+    )
+    t0 = datetime(2024, 6, 1, 16, 0, 0)
+    peer_mismatch = _health(system_ok=False)
+    peer_mismatch.per_inverter["INV-A"].fault_code = "peer_mismatch"
+    peer_mismatch.per_inverter["INV-A"].reason = "Low output vs peer"
+
+    alerts, recoveries, _ = mgr.build_notification_batch(
+        now=t0,
+        health=peer_mismatch,
+        optimizer_mismatches=[],
+    )
+    assert len(alerts) == 1
+    assert recoveries == []
+
+    suppressed_health = _health(system_ok=True)
+    suppressed_health.peer_comparison_suppressed = True
+    for minutes in (5, 10, 15):
+        alerts, recoveries, has_active = mgr.build_notification_batch(
+            now=t0 + timedelta(minutes=minutes),
+            health=suppressed_health,
+            optimizer_mismatches=[],
+        )
+        assert alerts == []
+        assert recoveries == []
+        assert has_active
+
+    healthy = _health(system_ok=True)
+    alerts, recoveries, has_active = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=20),
+        health=healthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert recoveries == []
+    assert has_active
+
+    alerts, recoveries, has_active = mgr.build_notification_batch(
+        now=t0 + timedelta(minutes=25),
+        health=healthy,
+        optimizer_mismatches=[],
+    )
+    assert alerts == []
+    assert len(recoveries) == 1
+    assert not has_active
+
+
 def test_identical_alerts_are_suppressed_then_reminded():
     state = AppState(persist=False)
     mgr = AlertStateManager(

@@ -17,7 +17,7 @@
 - WeatherClient derives solar position with Astral using the current time and configured coordinates. If weather, coordinates, Astral, or the angle values are unavailable, do not suppress peer comparisons based on angle.
 - Daylight grace is based on configured location, timezone, and sunrise/sunset; avoid replacing it with fixed clock-time rules without a specific need.
 - Alert persistence, repeat notifications, and recovery notifications are managed by `AlertStateManager`; test those transitions when changing alert lifecycle behavior.
-- A context-suppressed comparison currently yields healthy system health. Before changing suppression rules, check whether this would resolve an open incident and emit a misleading recovery notification; test the active-incident-to-suppressed transition.
+- Mark angle-suppressed peer comparisons as unevaluated, not healthy. Do not advance recovery counters, close an open peer-mismatch incident, or send an all-clear ping for that skipped comparison; test suppression followed by a real recovery.
 
 ## Configuration And Secrets
 
