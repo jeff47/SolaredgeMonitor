@@ -66,6 +66,9 @@ identical_alert_gate_minutes = 60    # Suppress identical persistent fault alert
 repeat_alert_interval_minutes = 720  # After the first reminder, resend unresolved identical faults at most this often
 low_vdc_threshold = 50               # Flag Vdc below this (V)
 min_alert_sun_el_deg = 6.0          # Suppress low-PAC alerts below this sun elevation (deg)
+# Optional peer-mismatch suppression thresholds, selected by sun azimuth
+# morning_peer_mismatch_min_sun_el_deg = 4.0
+# evening_peer_mismatch_min_sun_el_deg = 24.0
 alert_irradiance_floor_wm2 = 30.0    # Suppress PAC/ sleep/low-Vdc alerts when GHI/POA <= this (W/m^2)
 precip_cloud_cover_pct = 100.0       # Require this cloud cover to treat precip codes as auto-suppress
 precip_weather_codes = 51,53,55,56,57,61,63,65,66,67,71,73,75,77,80,81,82,85,86,95,96,99  # Open-Meteo precip codes

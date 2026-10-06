@@ -12,6 +12,8 @@ class DummyCfg:
     low_pac_threshold = 1.0              # percent of AC capacity (e.g., 10 W @ 1 kW)
     low_vdc_threshold = 50
     min_alert_sun_el_deg = None
+    morning_peer_mismatch_min_sun_el_deg = 4.0
+    evening_peer_mismatch_min_sun_el_deg = 24.0
     alert_irradiance_floor_wm2 = 30.0
 
 
@@ -58,6 +60,50 @@ def test_peer_mismatch_low_production_outlier():
     assert not health.system_ok
     assert not health.per_inverter["INV-B"].inverter_ok
     assert "ratio" in health.per_inverter["INV-B"].reason
+
+
+def test_directional_sun_angle_suppresses_peer_mismatch():
+    evaluator = _mk_evaluator()
+
+    def evaluate_pair(sun_elevation_deg, sun_azimuth_deg):
+        reader = MockModbusReader({
+            "INV-A": {"status": 4, "pac_w": 1500, "vdc_v": 400},
+            "INV-B": {"status": 4, "pac_w": 200, "vdc_v": 390},
+        }, evaluator.log)
+        return evaluator.evaluate(
+            reader.read_all(),
+            sun_elevation_deg=sun_elevation_deg,
+            sun_azimuth_deg=sun_azimuth_deg,
+            capacity_by_name={"INV-A": 1.0, "INV-B": 1.0},
+        )
+
+    assert evaluate_pair(3.9, 100.0).system_ok
+    assert evaluate_pair(4.1, 100.0).per_inverter["INV-B"].fault_code == "peer_mismatch"
+    assert evaluate_pair(23.9, 250.0).system_ok
+    assert evaluate_pair(24.1, 250.0).per_inverter["INV-B"].fault_code == "peer_mismatch"
+
+    fault_reader = MockModbusReader({
+        "INV-A": {"status": 7, "pac_w": 0, "vdc_v": 0},
+    }, evaluator.log)
+    fault_health = evaluator.evaluate(
+        fault_reader.read_all(),
+        sun_elevation_deg=10.0,
+        sun_azimuth_deg=250.0,
+        capacity_by_name={"INV-A": 1.0},
+    )
+    assert not fault_health.system_ok
+    assert fault_health.per_inverter["INV-A"].fault_code == "fault_state:7"
+
+    low_pac_reader = MockModbusReader({
+        "INV-A": {"status": 4, "pac_w": 5, "vdc_v": 380},
+    }, evaluator.log)
+    low_pac_health = evaluator.evaluate(
+        low_pac_reader.read_all(),
+        sun_elevation_deg=10.0,
+        sun_azimuth_deg=250.0,
+        capacity_by_name={"INV-A": 1.0},
+    )
+    assert low_pac_health.per_inverter["INV-A"].fault_code == "low_pac"
 
 
 # ---------------------------------------------------------------------------

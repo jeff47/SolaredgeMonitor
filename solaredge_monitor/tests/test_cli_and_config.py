@@ -105,6 +105,10 @@ azimuth_deg = 190
 [inverter:INV-B]
 host = 1.1.1.2
 
+[health]
+morning_peer_mismatch_min_sun_el_deg = 4.0
+evening_peer_mismatch_min_sun_el_deg = 24.0
+
 [solaredge_api]
 enabled = true
 solaredge_api_key = secret
@@ -147,6 +151,8 @@ structured_path = ./structured.jsonl
     assert cfg.health.consecutive_recovery_samples == 1
     assert cfg.health.identical_alert_gate_minutes == 60
     assert cfg.health.repeat_alert_interval_minutes == 720
+    assert cfg.health.morning_peer_mismatch_min_sun_el_deg == 4.0
+    assert cfg.health.evening_peer_mismatch_min_sun_el_deg == 24.0
 
     assert cfg.solaredge_api.enabled is True
     assert cfg.solaredge_api.api_key == "secret"

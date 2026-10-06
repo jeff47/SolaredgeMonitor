@@ -421,6 +421,7 @@ def main():
 
         health = None
         sun_el = weather_estimate.snapshot.sun_elevation_deg if weather_estimate else None
+        sun_azimuth = weather_estimate.snapshot.sun_azimuth_deg if weather_estimate else None
         irradiance_wm2 = weather_estimate.snapshot.ghi_wm2 if weather_estimate else None
         irr_floor = app_cfg.health.alert_irradiance_floor_wm2
         poa_wm2: float | None = None
@@ -453,6 +454,7 @@ def main():
                 capacity_by_name=capacity_map,
                 thresholds=thresholds,
                 pac_alert_suppression=pac_alert_suppression or None,
+                sun_azimuth_deg=sun_azimuth,
             )
 
         optimizer_mismatches: list[tuple[str, int, int | None]] = []

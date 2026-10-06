@@ -65,6 +65,35 @@ class HealthEvaluator:
     # Per-inverter evaluation
     # ----------------------------------------------------------------------
 
+    def _sun_angle_suppressed(
+        self,
+        sun_elevation_deg: float | None,
+    ) -> bool:
+        threshold = self.cfg.min_alert_sun_el_deg
+        return (
+            threshold is not None
+            and sun_elevation_deg is not None
+            and sun_elevation_deg < threshold
+        )
+
+    def _peer_mismatch_sun_angle_suppressed(
+        self,
+        sun_elevation_deg: float | None,
+        sun_azimuth_deg: float | None,
+    ) -> bool:
+        if sun_azimuth_deg is None:
+            return False
+        threshold = (
+            getattr(self.cfg, "morning_peer_mismatch_min_sun_el_deg", None)
+            if sun_azimuth_deg < 180.0
+            else getattr(self.cfg, "evening_peer_mismatch_min_sun_el_deg", None)
+        )
+        return (
+            threshold is not None
+            and sun_elevation_deg is not None
+            and sun_elevation_deg < threshold
+        )
+
     def evaluate_inverter(
         self,
         name: str,
@@ -87,12 +116,7 @@ class HealthEvaluator:
 
         status = reading.status
         status_str = self.STATUS_MAP.get(status, f"Unknown({status})")
-        min_alert_sun_el_deg = self.cfg.min_alert_sun_el_deg
-        sun_angle_suppressed = (
-            min_alert_sun_el_deg is not None
-            and sun_elevation_deg is not None
-            and sun_elevation_deg < min_alert_sun_el_deg
-        )
+        sun_angle_suppressed = self._sun_angle_suppressed(sun_elevation_deg)
 
         # ---------------------------------------
         # Abnormal statuses (ALWAYS unhealthy)
@@ -136,11 +160,7 @@ class HealthEvaluator:
             and reading.pac_w is not None
             and reading.pac_w < low_pac_threshold_w
             and not suppress_low_pac
-            and not (
-                min_alert_sun_el_deg is not None
-                and sun_elevation_deg is not None
-                and sun_elevation_deg < min_alert_sun_el_deg
-            )
+            and not sun_angle_suppressed
         ):
             return InverterHealth(
                 name=name,
@@ -274,6 +294,7 @@ class HealthEvaluator:
         capacity_by_name: Optional[Dict[str, Optional[float]]] = None,
         thresholds: Optional[Thresholds] = None,
         pac_alert_suppression: Optional[Dict[str, bool]] = None,
+        sun_azimuth_deg: float | None = None,
     ) -> SystemHealth:
         if thresholds is None:
             thresholds = self.derive_thresholds(
@@ -298,11 +319,7 @@ class HealthEvaluator:
 
         # If any inverter has a NON-producing status (2,3,5,6,7),
         # low-light/cloudy logic must NOT override it.
-        sun_angle_suppressed = (
-            self.cfg.min_alert_sun_el_deg is not None
-            and sun_elevation_deg is not None
-            and sun_elevation_deg < self.cfg.min_alert_sun_el_deg
-        )
+        sun_angle_suppressed = self._sun_angle_suppressed(sun_elevation_deg)
         abnormal_status_present = any(
             inv.reading
             and inv.reading.status not in (4,)
@@ -390,7 +407,12 @@ class HealthEvaluator:
         # --------------------------------------------------------------
         # 5. Full peer comparison
         # --------------------------------------------------------------
-        self._peer_compare(per_inverter, thresholds)
+        peer_mismatch_sun_suppressed = self._peer_mismatch_sun_angle_suppressed(
+            sun_elevation_deg,
+            sun_azimuth_deg,
+        )
+        if not peer_mismatch_sun_suppressed:
+            self._peer_compare(per_inverter, thresholds)
 
         if low_light_grace:
             self._clear_pac_related_flags(per_inverter)

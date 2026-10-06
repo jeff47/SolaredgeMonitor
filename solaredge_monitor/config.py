@@ -61,6 +61,8 @@ class HealthConfig:
     repeat_alert_interval_minutes: int = 12 * 60
     low_vdc_threshold: float = 50.0
     min_alert_sun_el_deg: float | None = None
+    morning_peer_mismatch_min_sun_el_deg: float | None = None
+    evening_peer_mismatch_min_sun_el_deg: float | None = None
     alert_irradiance_floor_wm2: float | None = 30.0
     precip_weather_codes: tuple[int, ...] = DEFAULT_PRECIP_WEATHER_CODES
     precip_cloud_cover_pct: float = 100.0
@@ -289,6 +291,10 @@ class Config:
                 health_kwargs["low_vdc_threshold"] = float(health_sec["low_vdc_threshold"])
             if "min_alert_sun_el_deg" in health_sec:
                 health_kwargs["min_alert_sun_el_deg"] = float(health_sec["min_alert_sun_el_deg"])
+            if "morning_peer_mismatch_min_sun_el_deg" in health_sec:
+                health_kwargs["morning_peer_mismatch_min_sun_el_deg"] = float(health_sec["morning_peer_mismatch_min_sun_el_deg"])
+            if "evening_peer_mismatch_min_sun_el_deg" in health_sec:
+                health_kwargs["evening_peer_mismatch_min_sun_el_deg"] = float(health_sec["evening_peer_mismatch_min_sun_el_deg"])
             if "alert_irradiance_floor_wm2" in health_sec:
                 health_kwargs["alert_irradiance_floor_wm2"] = float(health_sec["alert_irradiance_floor_wm2"])
             if "precip_cloud_cover_pct" in health_sec:
